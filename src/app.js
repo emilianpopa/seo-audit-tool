@@ -3,12 +3,17 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import logger from './config/logger.js';
 import { errorResponse, HTTP_STATUS } from './utils/responseFormatter.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import auditRoutes from './api/routes/audit.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
 import reportRoutes from './api/routes/report.routes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,26 +44,19 @@ app.use('/api/report', apiLimiter);
 app.use(pinoHttp({ logger }));
 
 // ============================================================================
+// STATIC FILES
+// ============================================================================
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, '../public')));
+
+// ============================================================================
 // ROUTES
 // ============================================================================
 
 app.use('/api/health', healthRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/report', reportRoutes);
-
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'SEO Audit Tool API',
-    version: '1.0.0',
-    status: 'running',
-    endpoints: {
-      health: '/api/health',
-      audit: '/api/audit',
-      report: '/api/report'
-    }
-  });
-});
 
 // ============================================================================
 // ERROR HANDLING
