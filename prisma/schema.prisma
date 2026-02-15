@@ -1,0 +1,233 @@
+// SEO Audit Tool - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUDIT MODELS
+// ============================================================================
+
+model SeoAudit {
+  id            String      @id @default(cuid())
+  userId        String      // Owner of the audit
+  tenantId      String?     // Optional multi-tenant support
+
+  // Target Website
+  targetUrl     String      // URL to audit (e.g., "https://getthrivin.com")
+  domain        String      // Extracted domain
+
+  // Audit Status
+  status        AuditStatus @default(PENDING)
+  progress      Int         @default(0) // 0-100
+
+  // Overall Score
+  overallScore  Int?        // 0-100
+  scoreRating   String?     // 'excellent' | 'good' | 'needs improvement' | 'poor'
+
+  // Metadata
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Error tracking
+  errorMessage  String?
+  errorDetails  Json?
+
+  // Configuration
+  config        Json        @default("{}") // Audit settings (depth, pages to crawl, etc.)
+
+  // Relations
+  results          SeoAuditResult[]
+  pages            SeoAuditPage[]
+  recommendations  SeoAuditRecommendation[]
+
+  @@index([userId, status])
+  @@index([createdAt(sort: Desc)])
+  @@index([domain])
+}
+
+enum AuditStatus {
+  PENDING      // Queued
+  IN_PROGRESS  // Running
+  COMPLETED    // Finished successfully
+  FAILED       // Failed with error
+  CANCELLED    // User cancelled
+}
+
+// ============================================================================
+// AUDIT RESULTS (Category Scores & Issues)
+// ============================================================================
+
+model SeoAuditResult {
+  id            String      @id @default(cuid())
+  auditId       String
+
+  // Category information
+  category      SeoCategory
+  categoryScore Int         // 0-100 for this category
+  weight        Decimal     @db.Decimal(3, 2) // e.g., 0.25 for 25%
+  rating        String?     // 'excellent' | 'good' | 'needs improvement' | 'poor'
+
+  // Issues detected
+  issues        Json        @default("[]") // Array of issue objects
+  issueCount    Int         @default(0)
+  criticalCount Int         @default(0)
+  highCount     Int         @default(0)
+  mediumCount   Int         @default(0)
+  lowCount      Int         @default(0)
+
+  // Raw analysis data
+  rawData       Json        @default("{}")
+
+  createdAt     DateTime    @default(now())
+
+  // Relations
+  audit         SeoAudit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@unique([auditId, category])
+  @@index([auditId])
+  @@index([category])
+}
+
+enum SeoCategory {
+  TECHNICAL_SEO
+  ON_PAGE_SEO
+  CONTENT_QUALITY
+  AUTHORITY_BACKLINKS
+  LOCAL_SEO
+  PERFORMANCE
+}
+
+// ============================================================================
+// AUDIT PAGES (Per-Page Analysis)
+// ============================================================================
+
+model SeoAuditPage {
+  id            String   @id @default(cuid())
+  auditId       String
+
+  // Page information
+  url           String
+  path          String
+  statusCode    Int
+  depth         Int      @default(0) // Crawl depth
+
+  // Meta data
+  title         String?
+  titleLength   Int?
+  metaDescription String?
+  metaLength    Int?
+  h1Tags        String[] @default([])
+  h2Tags        String[] @default([])
+  h3Tags        String[] @default([])
+  canonical     String?
+
+  // Technical
+  loadTime      Int?     // milliseconds
+  size          Int?     // bytes
+  wordCount     Int?
+  imageCount    Int?
+  linkCount     Int?
+
+  // SEO signals
+  hasSchema     Boolean  @default(false)
+  schemaTypes   String[] @default([])
+  openGraphTags Json?
+  twitterTags   Json?
+  robotsMeta    String?  // index,follow / noindex,nofollow
+
+  // Issues
+  issues        Json     @default("[]")
+  issueCount    Int      @default(0)
+
+  // Raw HTML (optional, for debugging)
+  htmlSnapshot  String?  @db.Text
+
+  createdAt     DateTime @default(now())
+
+  // Relations
+  audit         SeoAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@index([auditId])
+  @@index([url])
+  @@index([statusCode])
+}
+
+// ============================================================================
+// RECOMMENDATIONS (Actionable Tasks)
+// ============================================================================
+
+model SeoAuditRecommendation {
+  id            String        @id @default(cuid())
+  auditId       String
+
+  // Recommendation details
+  category      SeoCategory
+  priority      IssuePriority
+  title         String
+  description   String        @db.Text
+  implementation String       @db.Text // How to implement
+  expectedImpact String       @db.Text // Expected results
+
+  // Impact metrics
+  affectedPages Int          @default(0) // Number of pages affected by this issue
+
+  // Effort estimation
+  effortLevel   EffortLevel
+  estimatedHours Int?
+
+  // Implementation phase
+  phase         String?      // 'quick-wins' | 'short-term' | 'medium-term' | 'long-term'
+
+  // Tracking
+  completed     Boolean      @default(false)
+  completedAt   DateTime?
+
+  createdAt     DateTime     @default(now())
+
+  // Relations
+  audit         SeoAudit     @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@index([auditId, priority])
+  @@index([priority])
+  @@index([effortLevel])
+  @@index([completed])
+}
+
+enum IssuePriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum EffortLevel {
+  QUICK_WIN      // < 2 hours
+  MODERATE       // 2-8 hours
+  SUBSTANTIAL    // 8-40 hours
+  MAJOR_PROJECT  // > 40 hours
+}
+
+// ============================================================================
+// USER MODEL (Optional - for multi-user support)
+// ============================================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  apiKey        String?  @unique // For API access
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([email])
+  @@index([apiKey])
+}
