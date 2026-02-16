@@ -217,10 +217,12 @@ async function processAudit(job) {
     logger.info({ auditId }, 'Step 10: Generating recommendations');
 
     // Generate recommendations from all analyzer issues
+    let recommendationCount = 0;
     for (const analyzerResult of analyzerResults) {
       const issues = analyzerResult.issues || [];
 
       for (const issue of issues) {
+        recommendationCount++;
         // Map severity to priority
         let priority;
         if (issue.severity === 'critical') priority = 'CRITICAL';
@@ -286,7 +288,7 @@ async function processAudit(job) {
 
     logger.info({
       auditId,
-      recommendationsCreated: allIssues.length
+      recommendationsCreated: recommendationCount
     }, 'Recommendations generated');
 
     // ========================================================================
