@@ -142,21 +142,38 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
     const domain = new URL(audit.targetUrl).hostname.replace('www.', '');
     let filename, filepath;
 
+    // Ensure reports directory exists
+    const reportsDir = path.join(process.cwd(), 'reports');
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+
     if (enhanced && format.toLowerCase() === 'pdf') {
       // Enhanced PDF uses date-based naming
-      const files = fs.readdirSync(path.join(process.cwd(), 'reports'));
-      const matchingFile = files.find(f => f.startsWith(`seo-audit-${domain}`) && f.endsWith('.pdf'));
+      // Try to find existing file with same domain and today's date
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const expectedFilename = `seo-audit-${domain}-${todayDateStr}.pdf`;
+      const expectedPath = path.join(reportsDir, expectedFilename);
 
-      if (matchingFile) {
-        filename = matchingFile;
-        filepath = path.join(process.cwd(), 'reports', filename);
+      if (fs.existsSync(expectedPath)) {
+        filename = expectedFilename;
+        filepath = expectedPath;
       } else {
-        filename = `seo-audit-${domain}-${new Date().toISOString().split('T')[0]}.${extension}`;
-        filepath = path.join(process.cwd(), 'reports', filename);
+        // Check if any file for this domain exists today
+        const files = fs.readdirSync(reportsDir);
+        const matchingFile = files.find(f => f.startsWith(`seo-audit-${domain}`) && f.endsWith('.pdf'));
+
+        if (matchingFile) {
+          filename = matchingFile;
+          filepath = path.join(reportsDir, filename);
+        } else {
+          filename = expectedFilename;
+          filepath = expectedPath;
+        }
       }
     } else {
       filename = `seo-audit-${id}.${extension}`;
-      filepath = path.join(process.cwd(), 'reports', filename);
+      filepath = path.join(reportsDir, filename);
     }
 
     // Check if file exists, if not generate it
