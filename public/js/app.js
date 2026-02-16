@@ -7,6 +7,9 @@ const app = {
     currentAuditId: null,
     pollingInterval: null,
     currentAuditData: null,
+    auditStartTime: null,
+    elapsedTimeInterval: null,
+    lastPollTime: null,
 
     /**
      * Initialize the application
@@ -38,11 +41,27 @@ const app = {
             this.handleAuditSubmit();
         });
 
-        // New audit button
+        // New audit button (in results section)
         const newAuditBtn = document.getElementById('newAuditBtn');
         if (newAuditBtn) {
             newAuditBtn.addEventListener('click', () => {
                 this.resetToAuditForm();
+            });
+        }
+
+        // New audit button (in progress section)
+        const newAuditBtnProgress = document.getElementById('newAuditBtnProgress');
+        if (newAuditBtnProgress) {
+            newAuditBtnProgress.addEventListener('click', () => {
+                this.resetToAuditForm();
+            });
+        }
+
+        // Cancel audit button
+        const cancelAuditBtn = document.getElementById('cancelAuditBtn');
+        if (cancelAuditBtn) {
+            cancelAuditBtn.addEventListener('click', () => {
+                this.handleCancelAudit();
             });
         }
 
@@ -117,6 +136,10 @@ const app = {
             // Switch to progress view
             this.showProgressView();
 
+            // Track audit start time
+            this.auditStartTime = Date.now();
+            this.startElapsedTimeTracking();
+
             // Start polling
             this.startPolling();
 
@@ -152,15 +175,50 @@ const app = {
     },
 
     /**
+     * Handle cancel audit button click
+     */
+    async handleCancelAudit() {
+        if (!this.currentAuditId) return;
+
+        const confirmed = confirm('Are you sure you want to cancel this audit?');
+        if (!confirmed) return;
+
+        const cancelBtn = document.getElementById('cancelAuditBtn');
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = '<span class="spinner"></span> Cancelling...';
+
+        try {
+            await API.deleteAudit(this.currentAuditId);
+            Components.showToast('Audit cancelled successfully', 'success');
+            this.resetToAuditForm();
+        } catch (error) {
+            console.error('Error cancelling audit:', error);
+            Components.showToast('Failed to cancel audit', 'error');
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                Cancel Audit
+            `;
+        }
+    },
+
+    /**
      * Reset UI to initial audit form
      */
     resetToAuditForm() {
-        // Stop polling
+        // Stop polling and timers
         this.stopPolling();
+        this.stopElapsedTimeTracking();
 
         // Clear audit data
         this.currentAuditId = null;
         this.currentAuditData = null;
+        this.auditStartTime = null;
+        this.lastPollTime = null;
         sessionStorage.removeItem('currentAuditId');
 
         // Reset form
@@ -170,6 +228,20 @@ const app = {
         startBtn.disabled = false;
         startBtn.querySelector('.btn-text').style.display = 'inline';
         startBtn.querySelector('.btn-loader').style.display = 'none';
+
+        // Reset cancel button
+        const cancelBtn = document.getElementById('cancelAuditBtn');
+        if (cancelBtn) {
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                Cancel Audit
+            `;
+        }
 
         // Show audit section
         document.getElementById('auditSection').style.display = 'block';
@@ -205,6 +277,59 @@ const app = {
     },
 
     /**
+     * Start tracking elapsed time
+     */
+    startElapsedTimeTracking() {
+        this.elapsedTimeInterval = setInterval(() => {
+            this.updateElapsedTime();
+        }, 1000); // Update every second
+    },
+
+    /**
+     * Stop tracking elapsed time
+     */
+    stopElapsedTimeTracking() {
+        if (this.elapsedTimeInterval) {
+            clearInterval(this.elapsedTimeInterval);
+            this.elapsedTimeInterval = null;
+        }
+    },
+
+    /**
+     * Update elapsed time display
+     */
+    updateElapsedTime() {
+        if (!this.auditStartTime) return;
+
+        const elapsed = Math.floor((Date.now() - this.auditStartTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+
+        const elapsedTimeEl = document.getElementById('elapsedTime');
+        if (elapsedTimeEl) {
+            if (minutes > 0) {
+                elapsedTimeEl.textContent = `${minutes}m ${seconds}s`;
+            } else {
+                elapsedTimeEl.textContent = `${seconds}s`;
+            }
+        }
+    },
+
+    /**
+     * Update last updated timestamp
+     */
+    updateLastUpdated() {
+        this.lastPollTime = Date.now();
+        const lastUpdatedEl = document.getElementById('lastUpdated');
+        if (lastUpdatedEl) {
+            lastUpdatedEl.innerHTML = `
+                <span class="live-indicator"></span>
+                Just now
+            `;
+        }
+    },
+
+    /**
      * Poll audit status
      */
     async pollAuditStatus() {
@@ -215,6 +340,9 @@ const app = {
             const status = response.data;
 
             console.log('Audit status:', status);
+
+            // Update last updated timestamp
+            this.updateLastUpdated();
 
             // Update progress UI
             const progress = status.progress || 0;
@@ -230,6 +358,7 @@ const app = {
             // Check if completed
             if (statusText === 'COMPLETED') {
                 this.stopPolling();
+                this.stopElapsedTimeTracking();
                 Components.showToast('Audit completed!', 'success');
                 await this.loadAuditResults();
             }
@@ -237,12 +366,23 @@ const app = {
             // Check if failed
             if (statusText === 'FAILED') {
                 this.stopPolling();
+                this.stopElapsedTimeTracking();
                 Components.showToast(status.error || 'Audit failed', 'error');
+                this.resetToAuditForm();
+            }
+
+            // Check if cancelled
+            if (statusText === 'CANCELLED') {
+                this.stopPolling();
+                this.stopElapsedTimeTracking();
+                Components.showToast('Audit was cancelled', 'warning');
                 this.resetToAuditForm();
             }
 
         } catch (error) {
             console.error('Error polling status:', error);
+            // Update last updated to show we tried
+            this.updateLastUpdated();
             // Continue polling even on error (network might be temporarily down)
         }
     },
@@ -416,6 +556,8 @@ const app = {
                 await this.loadAuditResults();
             } else if (status === 'IN_PROGRESS' || status === 'PENDING') {
                 this.showProgressView();
+                this.auditStartTime = Date.now(); // Approximate start time
+                this.startElapsedTimeTracking();
                 this.startPolling();
             } else {
                 Components.showToast(`Audit status: ${status}`, 'warning');

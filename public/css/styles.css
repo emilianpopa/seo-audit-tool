@@ -305,6 +305,7 @@ input[type="number"]:focus {
     padding: 1.5rem;
     background: var(--gray-50);
     border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
 }
 
 .progress-stat {
@@ -323,6 +324,52 @@ input[type="number"]:focus {
     font-size: 1rem;
     color: var(--gray-900);
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.live-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+.progress-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: var(--white);
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 /* Score Card */
@@ -737,6 +784,10 @@ input[type="number"]:focus {
     }
 
     .download-buttons {
+        flex-direction: column;
+    }
+
+    .progress-actions {
         flex-direction: column;
     }
 
