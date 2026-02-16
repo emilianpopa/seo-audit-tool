@@ -74,41 +74,86 @@ class EnhancedSEOReportGenerator {
     const filepath = path.join(this.reportDir, filename);
 
     return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({
+        margin: 50,
+        size: 'A4',
+        bufferPages: true
+      });
+      const stream = fs.createWriteStream(filepath);
+
+      stream.on('error', (err) => {
+        logger.error({ err, auditId: this.auditId }, 'Stream error during PDF generation');
+        reject(err);
+      });
+
+      doc.on('error', (err) => {
+        logger.error({ err, auditId: this.auditId }, 'PDFDocument error');
+        reject(err);
+      });
+
       try {
-        const doc = new PDFDocument({
-          margin: 50,
-          size: 'A4',
-          bufferPages: true
-        });
-        const stream = fs.createWriteStream(filepath);
         doc.pipe(stream);
 
         // Build comprehensive PDF content
+        logger.info({ auditId: this.auditId }, 'Building cover page');
         this.buildCoverPage(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building scoring model');
         this.buildScoringModelExplanation(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building score breakdown');
         this.buildScoreBreakdown(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building what not working');
         this.buildWhatNotWorking(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building what is working');
         this.buildWhatIsWorking(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building what needs change');
         this.buildWhatNeedsChange(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building content recommendations');
         this.buildContentRecommendations(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building other improvements');
         this.buildOtherImprovements(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building detailed roadmap');
         this.buildDetailedRoadmap(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building expected results');
         this.buildExpectedResults(doc);
+
+        logger.info({ auditId: this.auditId }, 'Building action summary');
         this.buildActionSummary(doc);
 
         // Add page numbers
+        logger.info({ auditId: this.auditId }, 'Adding page numbers');
         this.addPageNumbers(doc);
 
         doc.end();
 
         stream.on('finish', () => {
-          logger.info({ auditId: this.auditId, filepath }, 'Enhanced PDF report generated');
+          logger.info({ auditId: this.auditId, filepath }, 'Enhanced PDF report generated successfully');
           resolve(filepath);
         });
-
-        stream.on('error', reject);
       } catch (err) {
-        logger.error({ err, auditId: this.auditId }, 'Enhanced PDF generation failed');
+        logger.error({
+          err,
+          auditId: this.auditId,
+          errorMessage: err.message,
+          errorStack: err.stack
+        }, 'Enhanced PDF generation failed');
+
+        // Clean up
+        if (stream && !stream.destroyed) {
+          stream.destroy();
+        }
+        if (doc) {
+          doc.end();
+        }
+
         reject(err);
       }
     });
