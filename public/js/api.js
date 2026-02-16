@@ -100,9 +100,9 @@ const API = {
      * @param {string} auditId - Audit ID
      * @param {string} format - Report format (pdf or docx)
      */
-    async downloadReport(auditId, format = 'pdf') {
+    async downloadReport(auditId, format = 'pdf', enhanced = true) {
         try {
-            const url = `${this.baseURL}/report/${auditId}/download?format=${format}`;
+            const url = `${this.baseURL}/report/${auditId}/download?format=${format}&enhanced=${enhanced}`;
             const response = await fetch(url);
 
             if (!response.ok) {
