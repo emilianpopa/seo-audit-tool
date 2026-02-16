@@ -18,6 +18,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Railway's reverse proxy to read client IPs from X-Forwarded-For headers
+// This prevents all users from sharing the same rate limit bucket
+app.set('trust proxy', true);
+
 // ============================================================================
 // MIDDLEWARE
 // ============================================================================

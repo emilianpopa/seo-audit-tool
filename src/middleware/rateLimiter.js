@@ -67,12 +67,12 @@ export function createRateLimiter(options = {}) {
 
 /**
  * Audit creation rate limiter
- * Limit: 5 audits per hour per IP
+ * Limit: 10 audits per hour per IP (configurable via env)
  */
 export const auditCreationLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
-  message: 'Too many audit requests. Limit: 5 audits per hour.',
+  max: parseInt(process.env.AUDIT_CREATION_LIMIT || '10'),
+  message: 'Too many audit requests. Please try again later.',
   keyGenerator: (req) => {
     // Use user ID if authenticated, otherwise IP
     return req.user?.id || req.ip || 'anonymous';
@@ -81,22 +81,22 @@ export const auditCreationLimiter = createRateLimiter({
 
 /**
  * General API rate limiter
- * Limit: 100 requests per 15 minutes per IP
+ * Limit: 200 requests per 15 minutes per IP (configurable via env)
  */
 export const apiLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: parseInt(process.env.API_RATE_LIMIT || '200'),
   message: 'Too many requests from this IP. Please try again later.'
 });
 
 /**
  * Report download rate limiter
- * Limit: 20 downloads per hour per IP
+ * Limit: 50 downloads per hour per IP (configurable via env)
  */
 export const reportDownloadLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20,
-  message: 'Too many report downloads. Limit: 20 downloads per hour.'
+  max: parseInt(process.env.REPORT_DOWNLOAD_LIMIT || '50'),
+  message: 'Too many report downloads. Please try again later.'
 });
 
 /**
