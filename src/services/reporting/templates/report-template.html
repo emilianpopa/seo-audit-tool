@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEO Audit Report</title>
+  <style>
+    /* Reset and Base Styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4;
+      margin: 15mm 12mm;
+      @top-center {
+        content: "SEO Audit Report • {{domain}}";
+        font-size: 8pt;
+        color: #999;
+        padding-bottom: 5mm;
+        border-bottom: 1px solid #eee;
+      }
+      @bottom-right {
+        content: "Page " counter(page);
+        font-size: 8pt;
+        color: #999;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.5;
+      color: #333;
+    }
+
+    /* Typography */
+    h1 {
+      font-size: 18pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0 0 8pt 0;
+      page-break-after: avoid;
+    }
+
+    h2 {
+      font-size: 14pt;
+      font-weight: 600;
+      color: #1e293b;
+      margin: 12pt 0 6pt 0;
+      padding-bottom: 4pt;
+      border-bottom: 1px solid #cbd5e1;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      font-size: 11pt;
+      font-weight: 600;
+      color: #475569;
+      margin: 8pt 0 4pt 0;
+      page-break-after: avoid;
+    }
+
+    p {
+      margin: 0 0 8pt 0;
+      text-align: justify;
+    }
+
+    /* Layout */
+    .page-break {
+      page-break-after: always;
+    }
+
+    .avoid-break {
+      page-break-inside: avoid;
+    }
+
+    .keep-together {
+      page-break-inside: avoid;
+    }
+
+    /* Cover Page */
+    .cover {
+      min-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .cover h1 {
+      font-size: 28pt;
+      margin-bottom: 16pt;
+    }
+
+    .cover .subtitle {
+      font-size: 14pt;
+      color: #666;
+      margin-bottom: 24pt;
+    }
+
+    .cover .score-circle {
+      width: 140pt;
+      height: 140pt;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      margin: 24pt auto;
+      color: white;
+      font-weight: bold;
+    }
+
+    .cover .score-number {
+      font-size: 48pt;
+      line-height: 1;
+    }
+
+    .cover .score-label {
+      font-size: 12pt;
+      margin-top: 4pt;
+    }
+
+    .cover .summary-box {
+      margin: 24pt auto;
+      padding: 16pt;
+      border: 2pt solid #1e293b;
+      max-width: 400pt;
+      text-align: left;
+    }
+
+    .cover .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 6pt 0;
+      font-size: 9pt;
+    }
+
+    .cover .summary-label {
+      color: #666;
+    }
+
+    .cover .summary-value {
+      font-weight: 600;
+    }
+
+    /* Score Breakdown */
+    .score-bar {
+      margin: 10pt 0;
+      page-break-inside: avoid;
+    }
+
+    .score-bar-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4pt;
+      font-size: 10pt;
+    }
+
+    .score-bar-track {
+      height: 20pt;
+      background: #e5e7eb;
+      border-radius: 2pt;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .score-bar-fill {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding-left: 6pt;
+      color: white;
+      font-weight: 600;
+      font-size: 11pt;
+    }
+
+    .score-bar-details {
+      margin-top: 3pt;
+      font-size: 8pt;
+      color: #666;
+    }
+
+    /* Issues */
+    .issue-card {
+      margin: 10pt 0;
+      padding: 10pt;
+      border-left: 3pt solid;
+      background: #f9fafb;
+      page-break-inside: avoid;
+    }
+
+    .issue-card.critical {
+      border-left-color: #dc2626;
+    }
+
+    .issue-card.high {
+      border-left-color: #ea580c;
+    }
+
+    .issue-card.medium {
+      border-left-color: #f59e0b;
+    }
+
+    .issue-card.low {
+      border-left-color: #16a34a;
+    }
+
+    .issue-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6pt;
+    }
+
+    .issue-title {
+      font-weight: 600;
+      font-size: 10pt;
+      color: #1e293b;
+    }
+
+    .issue-severity {
+      font-size: 8pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2pt 6pt;
+      border-radius: 2pt;
+      background: white;
+    }
+
+    .issue-severity.critical {
+      color: #dc2626;
+      border: 1pt solid #dc2626;
+    }
+
+    .issue-severity.high {
+      color: #ea580c;
+      border: 1pt solid #ea580c;
+    }
+
+    .issue-severity.medium {
+      color: #f59e0b;
+      border: 1pt solid #f59e0b;
+    }
+
+    .issue-severity.low {
+      color: #16a34a;
+      border: 1pt solid #16a34a;
+    }
+
+    .issue-description {
+      font-size: 9pt;
+      color: #475569;
+      margin-bottom: 6pt;
+    }
+
+    .issue-evidence {
+      margin: 6pt 0;
+      padding: 6pt;
+      background: white;
+      border-radius: 2pt;
+      font-size: 8pt;
+      font-family: 'Courier New', monospace;
+      color: #334155;
+    }
+
+    .issue-evidence-label {
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 3pt;
+    }
+
+    .issue-evidence-url {
+      color: #3b82f6;
+      word-break: break-all;
+      margin: 2pt 0;
+    }
+
+    .issue-fix {
+      font-size: 9pt;
+      color: #059669;
+      margin-top: 6pt;
+      font-weight: 500;
+    }
+
+    .issue-impact {
+      font-size: 8pt;
+      color: #666;
+      font-style: italic;
+      margin-top: 3pt;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: avoid;
+    }
+
+    th {
+      background: #f1f5f9;
+      font-weight: 600;
+      text-align: left;
+      padding: 6pt;
+      border: 1pt solid #cbd5e1;
+      color: #1e293b;
+    }
+
+    td {
+      padding: 6pt;
+      border: 1pt solid #e5e7eb;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    /* Confidence Badge */
+    .confidence-badge {
+      display: inline-block;
+      font-size: 7pt;
+      padding: 2pt 4pt;
+      border-radius: 2pt;
+      margin-left: 4pt;
+      font-weight: 600;
+    }
+
+    .confidence-measured {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .confidence-estimated {
+      background: #fef9c3;
+      color: #854d0e;
+    }
+
+    .confidence-notmeasured {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    /* Priority Matrix */
+    .priority-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12pt;
+      margin: 12pt 0;
+      page-break-inside: avoid;
+    }
+
+    .priority-box {
+      padding: 10pt;
+      border: 2pt solid;
+      border-radius: 4pt;
+    }
+
+    .priority-box.critical {
+      border-color: #dc2626;
+      background: #fef2f2;
+    }
+
+    .priority-box.high {
+      border-color: #ea580c;
+      background: #fff7ed;
+    }
+
+    .priority-box.medium {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .priority-box.low {
+      border-color: #16a34a;
+      background: #f0fdf4;
+    }
+
+    .priority-box-title {
+      font-weight: 600;
+      font-size: 11pt;
+      margin-bottom: 4pt;
+    }
+
+    .priority-box-count {
+      font-size: 24pt;
+      font-weight: 700;
+      margin: 6pt 0;
+    }
+
+    .priority-box-impact {
+      font-size: 8pt;
+      color: #666;
+    }
+
+    /* Roadmap */
+    .roadmap-phase {
+      margin: 12pt 0;
+      page-break-inside: avoid;
+    }
+
+    .roadmap-header {
+      background: #1e293b;
+      color: white;
+      padding: 6pt;
+      font-weight: 600;
+      font-size: 11pt;
+    }
+
+    .roadmap-subtitle {
+      font-size: 8pt;
+      color: #94a3b8;
+      font-weight: normal;
+    }
+
+    .roadmap-tasks {
+      border: 1pt solid #cbd5e1;
+      border-top: none;
+    }
+
+    .roadmap-task {
+      padding: 6pt;
+      border-bottom: 1pt solid #e5e7eb;
+      font-size: 9pt;
+    }
+
+    .roadmap-task:last-child {
+      border-bottom: none;
+    }
+
+    .roadmap-task-title {
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .roadmap-task-detail {
+      color: #64748b;
+      font-size: 8pt;
+      margin-top: 2pt;
+    }
+
+    /* Utility Classes */
+    .color-critical { color: #dc2626; }
+    .color-high { color: #ea580c; }
+    .color-medium { color: #f59e0b; }
+    .color-low { color: #16a34a; }
+    .color-excellent { color: #16a34a; }
+    .color-good { color: #84cc16; }
+    .color-needsimprovement { color: #f59e0b; }
+    .color-poor { color: #dc2626; }
+
+    .bg-critical { background-color: #dc2626; }
+    .bg-high { background-color: #ea580c; }
+    .bg-medium { background-color: #f59e0b; }
+    .bg-low { background-color: #16a34a; }
+    .bg-excellent { background-color: #16a34a; }
+    .bg-good { background-color: #84cc16; }
+    .bg-needsimprovement { background-color: #f59e0b; }
+    .bg-poor { background-color: #dc2626; }
+
+    .text-sm { font-size: 8pt; }
+    .text-xs { font-size: 7pt; }
+    .font-bold { font-weight: 700; }
+    .font-semibold { font-weight: 600; }
+    .text-gray { color: #64748b; }
+    .mt-2 { margin-top: 6pt; }
+    .mb-2 { margin-bottom: 6pt; }
+    .mb-4 { margin-bottom: 12pt; }
+
+    /* Lists */
+    ul, ol {
+      margin: 6pt 0 6pt 16pt;
+    }
+
+    li {
+      margin: 3pt 0;
+      font-size: 9pt;
+    }
+
+    /* Code blocks */
+    .code-block {
+      background: #f1f5f9;
+      padding: 8pt;
+      border-radius: 2pt;
+      font-family: 'Courier New', monospace;
+      font-size: 8pt;
+      margin: 6pt 0;
+      overflow-x: auto;
+      page-break-inside: avoid;
+    }
+
+    /* Highlights */
+    .highlight-box {
+      background: #eff6ff;
+      border-left: 3pt solid #3b82f6;
+      padding: 10pt;
+      margin: 10pt 0;
+      page-break-inside: avoid;
+    }
+
+    .warning-box {
+      background: #fefce8;
+      border-left: 3pt solid #eab308;
+      padding: 10pt;
+      margin: 10pt 0;
+      page-break-inside: avoid;
+    }
+
+    .success-box {
+      background: #f0fdf4;
+      border-left: 3pt solid #22c55e;
+      padding: 10pt;
+      margin: 10pt 0;
+      page-break-inside: avoid;
+    }
+  </style>
+</head>
+<body>
+  {{content}}
+</body>
+</html>

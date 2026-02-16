@@ -1,17 +1,21 @@
 import logger from '../../config/logger.js';
 
 /**
- * Authority & Backlinks Analyzer
+ * Authority & Trust Signals Analyzer
  *
- * Analyzes domain authority and trust signals:
+ * Analyzes website trust and authority indicators:
  * - Social media presence (Facebook, Twitter, LinkedIn, Instagram)
  * - Trust signals (Privacy Policy, Terms of Service, Contact Page, About Page)
  * - Security indicators (SSL certificate)
  * - Basic backlink indicators (limited without paid APIs)
  *
- * Weight: 15% of overall score
+ * Weight: 10% of overall score (reduced from 15% due to limited backlink data)
  *
- * Note: Full backlink analysis requires Moz/Ahrefs API integration
+ * IMPORTANT: This analyzer does NOT measure true Domain Authority (DA) or Domain Rating (DR).
+ * Real authority metrics require Moz DA/Ahrefs DR API integration.
+ * This score reflects "trust signals" and "website credibility indicators" only.
+ *
+ * Without backlink API integration, scores are capped at ~60/100 maximum.
  */
 class AuthorityAnalyzer {
   constructor(auditId, domain, pages) {
@@ -43,7 +47,7 @@ class AuthorityAnalyzer {
       const result = {
         category: 'AUTHORITY_BACKLINKS',
         categoryScore,
-        weight: 0.15,
+        weight: 0.10, // Reduced from 0.15 due to limited backlink data
         rating: this.getRating(categoryScore),
         issues: this.issues,
         issueCount: this.issues.length,
@@ -51,7 +55,12 @@ class AuthorityAnalyzer {
         highCount: this.issues.filter(i => i.severity === 'high').length,
         mediumCount: this.issues.filter(i => i.severity === 'medium').length,
         lowCount: this.issues.filter(i => i.severity === 'low').length,
-        checks: this.checks
+        checks: {
+          ...this.checks,
+          measurementMethod: 'trust-signals-only',
+          confidence: 'estimated',
+          note: 'Score measures trust signals only - True authority requires Moz/Ahrefs API integration'
+        }
       };
 
       logger.info({
@@ -268,14 +277,8 @@ class AuthorityAnalyzer {
       if (phonePattern.test(html)) hasPhone = true;
       if (addressPattern.test(html)) hasAddress = true;
 
-      // Also check schema.org markup
-      const schemaTypes = page.schemaTypes || [];
-      if (schemaTypes.includes('Organization') || schemaTypes.includes('LocalBusiness')) {
-        // Likely has structured contact info
-        hasEmail = true;
-        hasPhone = true;
-        hasAddress = true;
-      }
+      // Note: We no longer assume schema presence = all contact info
+      // Real implementation would parse schema JSON-LD for contact fields
 
       if (hasEmail && hasPhone && hasAddress) break;
     }
@@ -414,57 +417,96 @@ class AuthorityAnalyzer {
   }
 
   /**
-   * Calculate Authority score
+   * Calculate Authority score (Trust Signals)
+   *
+   * IMPORTANT: Without real backlink API data (Moz/Ahrefs), this score is capped.
+   * We measure "trust signals" not true "domain authority".
    */
   calculateScore() {
     const weights = {
-      socialMedia: 20,
+      socialMedia: 15,
       trustSignals: 30,
-      contactInformation: 20,
-      security: 20,
-      backlinkIndicators: 10
+      contactInformation: 25,
+      security: 30,
+      backlinkIndicators: 0 // Don't count without real data
     };
 
     let totalScore = 0;
     let totalWeight = 0;
 
-    // Social media score
+    // Social media score (more conservative)
     if (this.checks.socialMedia) {
-      const score = Math.min(100, (this.checks.socialMedia.platformsFound / 4) * 100);
+      // Require more platforms for high scores
+      // 0 platforms = 0%, 1 = 15%, 2 = 35%, 3 = 60%, 4 = 80%, 5+ = 100%
+      const platformsFound = this.checks.socialMedia.platformsFound;
+      let score = 0;
+      if (platformsFound === 1) score = 15;
+      else if (platformsFound === 2) score = 35;
+      else if (platformsFound === 3) score = 60;
+      else if (platformsFound === 4) score = 80;
+      else if (platformsFound >= 5) score = 100;
+
       totalScore += score * weights.socialMedia;
       totalWeight += weights.socialMedia;
     }
 
-    // Trust signals score
+    // Trust signals score (more conservative)
     if (this.checks.trustSignals) {
-      const score = (this.checks.trustSignals.trustPagesFound / 4) * 100;
+      // Having all 4 pages = 100%, 3 = 65%, 2 = 40%, 1 = 20%
+      const trustPagesFound = this.checks.trustSignals.trustPagesFound;
+      let score = 0;
+      if (trustPagesFound === 1) score = 20;
+      else if (trustPagesFound === 2) score = 40;
+      else if (trustPagesFound === 3) score = 65;
+      else if (trustPagesFound >= 4) score = 100;
+
       totalScore += score * weights.trustSignals;
       totalWeight += weights.trustSignals;
     }
 
     // Contact information score
     if (this.checks.contactInformation) {
-      const score = (this.checks.contactInformation.contactMethodsFound / 3) * 100;
+      // 1 method = 30%, 2 methods = 65%, 3 methods = 100%
+      const contactMethodsFound = this.checks.contactInformation.contactMethodsFound;
+      let score = 0;
+      if (contactMethodsFound === 1) score = 30;
+      else if (contactMethodsFound === 2) score = 65;
+      else if (contactMethodsFound >= 3) score = 100;
+
       totalScore += score * weights.contactInformation;
       totalWeight += weights.contactInformation;
     }
 
-    // Security score
+    // Security score (less binary)
     if (this.checks.security) {
-      totalScore += this.checks.security.securityScore * weights.security;
+      // HTTPS = 100%, no HTTPS = 0%
+      // Future: Add points for security headers, CSP, HSTS, etc.
+      const score = this.checks.security.hasSSL ? 100 : 0;
+      totalScore += score * weights.security;
       totalWeight += weights.security;
     }
 
-    // Backlink indicators score
-    if (this.checks.backlinkIndicators) {
-      const score = this.checks.backlinkIndicators.hasLinkStructure ? 70 : 40;
-      totalScore += score * weights.backlinkIndicators;
-      totalWeight += weights.backlinkIndicators;
-    }
+    // Backlink indicators: DON'T score without real API data
+    // Just provide informational context
+    // Real authority comes from Moz DA, Ahrefs DR, referring domains, etc.
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
 
-    return Math.max(0, Math.min(100, finalScore));
+    // CAP the score at 60/100 without real backlink data
+    // This is honest: you can have perfect trust signals but low authority
+    const cappedScore = Math.min(60, finalScore);
+
+    logger.debug({
+      auditId: this.auditId,
+      uncappedScore: finalScore,
+      cappedScore,
+      socialMedia: this.checks.socialMedia?.platformsFound || 0,
+      trustSignals: this.checks.trustSignals?.trustPagesFound || 0,
+      contactInfo: this.checks.contactInformation?.contactMethodsFound || 0,
+      hasSSL: this.checks.security?.hasSSL || false
+    }, 'Authority score calculated (capped without backlink API)');
+
+    return Math.max(0, cappedScore);
   }
 
   /**

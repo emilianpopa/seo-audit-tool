@@ -57,7 +57,11 @@ class TechnicalSEOAnalyzer {
         highCount: this.issues.filter(i => i.severity === 'high').length,
         mediumCount: this.issues.filter(i => i.severity === 'medium').length,
         lowCount: this.issues.filter(i => i.severity === 'low').length,
-        checks: this.checks
+        checks: {
+          ...this.checks,
+          measurementMethod: 'crawl-analysis',
+          confidence: 'measured'
+        }
       };
 
       logger.info({
@@ -110,7 +114,11 @@ class TechnicalSEOAnalyzer {
           title: 'Missing XML Sitemap',
           description: 'No sitemap.xml found. This makes it harder for search engines to discover all pages.',
           recommendation: 'Generate sitemap.xml using a plugin or tool, then submit to Google Search Console.',
-          affectedPages: 0
+          affectedPages: 0,
+          evidence: [{
+            url: `https://${this.domain}/sitemap.xml`,
+            detail: '404 Not Found'
+          }]
         });
       }
     } catch (err) {
@@ -167,7 +175,11 @@ class TechnicalSEOAnalyzer {
             title: 'Robots.txt Blocks All Pages',
             description: 'robots.txt contains "Disallow: /" which blocks search engines from crawling your site.',
             recommendation: 'Remove or modify the "Disallow: /" rule in robots.txt to allow search engine crawling.',
-            affectedPages: this.pages.length
+            affectedPages: this.pages.length,
+            evidence: [{
+              url: `https://${this.domain}/robots.txt`,
+              detail: 'Contains "Disallow: /"'
+            }]
           });
         }
 
@@ -292,7 +304,11 @@ class TechnicalSEOAnalyzer {
         description: `Only ${percentageOptimized}% of pages have proper viewport meta tags for mobile devices.`,
         recommendation: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> to all pages.',
         affectedPages: pagesWithoutViewport.length,
-        examples: pagesWithoutViewport.slice(0, 5)
+        examples: pagesWithoutViewport.slice(0, 5),
+        evidence: pagesWithoutViewport.slice(0, 5).map(url => ({
+          url,
+          detail: 'Missing viewport meta tag'
+        }))
       });
     }
 
@@ -342,7 +358,11 @@ class TechnicalSEOAnalyzer {
         title: 'No Structured Data Found',
         description: 'No Schema.org structured data detected. Structured data helps search engines understand your content.',
         recommendation: 'Add JSON-LD structured data (Organization, WebSite, Article, etc.) to key pages.',
-        affectedPages: this.pages.length
+        affectedPages: this.pages.length,
+        evidence: [{
+          url: null,
+          detail: 'No JSON-LD or Microdata schema found on any page'
+        }]
       });
     } else if (percentageWithSchema < 50) {
       this.issues.push({
@@ -352,7 +372,11 @@ class TechnicalSEOAnalyzer {
         description: `Only ${percentageWithSchema}% of pages have structured data. This is a missed opportunity for rich snippets.`,
         recommendation: 'Expand structured data coverage to more pages, especially product, article, and service pages.',
         affectedPages: pagesWithoutSchema.length,
-        examples: pagesWithoutSchema.slice(0, 5)
+        examples: pagesWithoutSchema.slice(0, 5),
+        evidence: pagesWithoutSchema.slice(0, 5).map(url => ({
+          url,
+          detail: 'Missing structured data'
+        }))
       });
     }
 
@@ -412,7 +436,11 @@ class TechnicalSEOAnalyzer {
         description: `Only ${percentageWithCanonical}% of pages have canonical tags. This can lead to duplicate content issues.`,
         recommendation: 'Add self-referencing canonical tags to all pages: <link rel="canonical" href="[page-url]">',
         affectedPages: pagesWithoutCanonical.length,
-        examples: pagesWithoutCanonical.slice(0, 5)
+        examples: pagesWithoutCanonical.slice(0, 5),
+        evidence: pagesWithoutCanonical.slice(0, 5).map(url => ({
+          url,
+          detail: 'Missing canonical tag'
+        }))
       });
     }
 
@@ -424,7 +452,11 @@ class TechnicalSEOAnalyzer {
         description: `${pagesWithWrongCanonical.length} pages have canonical tags pointing to different URLs.`,
         recommendation: 'Review canonical tags to ensure they point to the correct version of each page.',
         affectedPages: pagesWithWrongCanonical.length,
-        examples: pagesWithWrongCanonical.slice(0, 3)
+        examples: pagesWithWrongCanonical.slice(0, 3),
+        evidence: pagesWithWrongCanonical.slice(0, 3).map(item => ({
+          url: item.url,
+          detail: `Points to ${item.canonical}`
+        }))
       });
     }
 
@@ -437,65 +469,71 @@ class TechnicalSEOAnalyzer {
   /**
    * Calculate Technical SEO score
    * Weighted scoring based on check results
+   * More conservative to match professional SEO tools
    */
   calculateScore() {
     const weights = {
       sitemap: 20,
       robotsTxt: 15,
-      ssl: 25,
+      ssl: 30, // Increased from 25 - critical for SEO
       mobileResponsive: 20,
       structuredData: 10,
-      canonicalTags: 10
+      canonicalTags: 5 // Reduced from 10 - less critical
     };
 
     let totalScore = 0;
     let totalWeight = 0;
 
-    // Sitemap score
+    // Sitemap score (binary - critical for crawlability)
     if (this.checks.sitemap) {
       const score = this.checks.sitemap.exists ? 100 : 0;
       totalScore += score * weights.sitemap;
       totalWeight += weights.sitemap;
     }
 
-    // Robots.txt score
+    // Robots.txt score (more conservative)
     if (this.checks.robotsTxt) {
       let score = 0;
       if (this.checks.robotsTxt.exists) {
         if (this.checks.robotsTxt.hasDisallowAll) {
-          score = 0; // Critical failure
+          score = 0; // Critical failure - blocks all crawlers
         } else if (this.checks.robotsTxt.hasSitemapReference) {
-          score = 100;
+          score = 100; // Perfect - has robots.txt with sitemap reference
         } else {
-          score = 70;
+          score = 60; // Has robots.txt but missing sitemap reference (reduced from 70)
         }
       } else {
-        score = 50; // Not critical, but should exist
+        score = 20; // Missing robots.txt is a problem (reduced from 50)
       }
       totalScore += score * weights.robotsTxt;
       totalWeight += weights.robotsTxt;
     }
 
-    // SSL score
+    // SSL score (critical for trust and rankings)
     if (this.checks.ssl) {
       const score = this.checks.ssl.hasSSL ? 100 : 0;
       totalScore += score * weights.ssl;
       totalWeight += weights.ssl;
     }
 
-    // Mobile responsive score
+    // Mobile responsive score (conservative - penalize non-mobile-friendly)
     if (this.checks.mobileResponsive) {
-      totalScore += this.checks.mobileResponsive.percentageOptimized * weights.mobileResponsive;
+      const percentageOptimized = this.checks.mobileResponsive.percentageOptimized || 0;
+      // Penalize sites that aren't 100% mobile-optimized
+      let score = percentageOptimized;
+      if (percentageOptimized < 90) score = percentageOptimized * 0.8; // 20% penalty
+
+      totalScore += score * weights.mobileResponsive;
       totalWeight += weights.mobileResponsive;
     }
 
-    // Structured data score
+    // Structured data score (nice to have, not critical)
     if (this.checks.structuredData) {
       totalScore += this.checks.structuredData.percentageWithSchema * weights.structuredData;
       totalWeight += weights.structuredData;
     }
 
-    // Canonical tags score
+    // Canonical tags score (important but often missing)
     if (this.checks.canonicalTags) {
       totalScore += this.checks.canonicalTags.percentageWithCanonical * weights.canonicalTags;
       totalWeight += weights.canonicalTags;

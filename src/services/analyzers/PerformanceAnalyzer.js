@@ -31,6 +31,9 @@ class PerformanceAnalyzer {
     logger.info({ auditId: this.auditId }, 'Starting Performance analysis');
 
     try {
+      // ALWAYS calculate load-time estimation as fallback
+      this.calculateLoadTimeEstimation();
+
       // Check if API key is configured
       if (!this.apiKey) {
         logger.warn({ auditId: this.auditId }, 'Google PageSpeed API key not configured');
@@ -68,7 +71,11 @@ class PerformanceAnalyzer {
         highCount: this.issues.filter(i => i.severity === 'high').length,
         mediumCount: this.issues.filter(i => i.severity === 'medium').length,
         lowCount: this.issues.filter(i => i.severity === 'low').length,
-        checks: this.checks
+        checks: {
+          ...this.checks,
+          measurementMethod: this.checks.pageSpeed ? 'pagespeed-api' : 'load-time-estimation',
+          confidence: this.checks.pageSpeed ? 'measured' : 'estimated'
+        }
       };
 
       logger.info({
@@ -177,7 +184,11 @@ class PerformanceAnalyzer {
         title: 'Poor Mobile Performance',
         description: `Mobile performance score is ${mobileScore}/100. This significantly impacts user experience and SEO.`,
         recommendation: 'Optimize images, minify resources, enable compression, and reduce server response time.',
-        affectedPages: 1
+        affectedPages: 1,
+        evidence: [{
+          url: homepage.url,
+          detail: `PageSpeed Mobile Score: ${mobileScore}/100`
+        }]
       });
     } else if (mobileScore !== null && mobileScore < 90) {
       this.issues.push({
@@ -186,7 +197,11 @@ class PerformanceAnalyzer {
         title: 'Mobile Performance Needs Improvement',
         description: `Mobile performance score is ${mobileScore}/100. There's room for optimization.`,
         recommendation: 'Review PageSpeed Insights recommendations and implement high-impact optimizations.',
-        affectedPages: 1
+        affectedPages: 1,
+        evidence: [{
+          url: homepage.url,
+          detail: `PageSpeed Mobile Score: ${mobileScore}/100`
+        }]
       });
     }
 
@@ -320,11 +335,10 @@ class PerformanceAnalyzer {
   }
 
   /**
-   * Get fallback analysis when API is not available
+   * Calculate load-time based performance estimation
+   * Always called as fallback, even when PageSpeed API is available
    */
-  getFallbackAnalysis() {
-    logger.info({ auditId: this.auditId }, 'Using fallback performance analysis');
-
+  calculateLoadTimeEstimation() {
     // Analyze based on load times from crawler
     let avgLoadTime = 0;
     let totalLoadTime = 0;
@@ -347,14 +361,32 @@ class PerformanceAnalyzer {
       status: avgLoadTime < 2000 ? 'pass' : 'fail'
     };
 
-    // Estimate score based on load time
-    let estimatedScore = 100;
-    if (avgLoadTime > 1000) estimatedScore -= 10;
+    // Estimate score based on load time (more conservative scoring)
+    let estimatedScore = 50; // Start at 50, not 100
+    if (avgLoadTime < 1000) estimatedScore += 30; // Fast sites get bonus
+    if (avgLoadTime < 500) estimatedScore += 20; // Very fast sites get more
     if (avgLoadTime > 2000) estimatedScore -= 20;
-    if (avgLoadTime > 3000) estimatedScore -= 30;
-    if (avgLoadTime > 5000) estimatedScore -= 40;
+    if (avgLoadTime > 3000) estimatedScore -= 15;
+    if (avgLoadTime > 5000) estimatedScore -= 15;
 
-    this.checks.estimatedScore = Math.max(0, estimatedScore);
+    this.checks.estimatedScore = Math.max(0, Math.min(100, estimatedScore));
+
+    logger.debug({
+      auditId: this.auditId,
+      avgLoadTime,
+      estimatedScore: this.checks.estimatedScore
+    }, 'Load-time estimation calculated');
+  }
+
+  /**
+   * Get fallback analysis when API is not available
+   */
+  getFallbackAnalysis() {
+    logger.info({ auditId: this.auditId }, 'Using fallback performance analysis');
+
+    const avgLoadTime = this.checks.loadTimes?.avgLoadTime || 0;
+    const pagesWithLoadTime = this.checks.loadTimes?.pagesAnalyzed || 0;
+    const estimatedScore = this.checks.estimatedScore || 50; // Default to 50 if no data, never 0
 
     if (avgLoadTime > 3000) {
       this.issues.push({
@@ -363,7 +395,11 @@ class PerformanceAnalyzer {
         title: 'Slow Page Load Times',
         description: `Average page load time is ${avgLoadTime}ms. Target is under 3000ms.`,
         recommendation: 'Optimize server response times, enable caching, compress resources, and optimize images.',
-        affectedPages: pagesWithLoadTime
+        affectedPages: pagesWithLoadTime,
+        evidence: [{
+          url: null,
+          detail: `Average load time: ${avgLoadTime}ms across ${pagesWithLoadTime} pages`
+        }]
       });
     }
 
@@ -373,41 +409,85 @@ class PerformanceAnalyzer {
       title: 'PageSpeed API Not Configured',
       description: 'Google PageSpeed Insights API key not configured. Using fallback analysis.',
       recommendation: 'Add GOOGLE_PAGESPEED_API_KEY to .env for detailed performance metrics.',
-      affectedPages: 0
+      affectedPages: 0,
+      evidence: [{
+        url: null,
+        detail: 'Set GOOGLE_PAGESPEED_API_KEY environment variable'
+      }]
     });
+
+    // Ensure score is never 0 - minimum of 30 for fallback
+    const finalScore = Math.max(30, estimatedScore);
 
     return {
       category: 'PERFORMANCE',
-      categoryScore: estimatedScore,
+      categoryScore: finalScore,
       weight: 0.10,
-      rating: this.getRating(estimatedScore),
+      rating: this.getRating(finalScore),
       issues: this.issues,
       issueCount: this.issues.length,
       criticalCount: this.issues.filter(i => i.severity === 'critical').length,
       highCount: this.issues.filter(i => i.severity === 'high').length,
       mediumCount: this.issues.filter(i => i.severity === 'medium').length,
       lowCount: this.issues.filter(i => i.severity === 'low').length,
-      checks: this.checks
+      checks: {
+        ...this.checks,
+        measurementMethod: 'fallback',
+        confidence: 'estimated'
+      }
     };
   }
 
   /**
    * Calculate Performance score
+   * Uses PageSpeed scores if available and valid, otherwise falls back to load-time estimation
    */
   calculateScore() {
     // If we have PageSpeed scores, use those
     if (this.checks.pageSpeed) {
-      const mobileScore = this.checks.pageSpeed.mobile?.score || 0;
-      const desktopScore = this.checks.pageSpeed.desktop?.score || 0;
+      const mobileScore = this.checks.pageSpeed.mobile?.score;
+      const desktopScore = this.checks.pageSpeed.desktop?.score;
 
-      // Weight mobile more heavily (70/30)
-      const weightedScore = (mobileScore * 0.7) + (desktopScore * 0.3);
+      // Only use PageSpeed scores if we have valid data (not null/undefined)
+      // If both are missing or 0, fall back to load-time estimation
+      if (mobileScore !== null && mobileScore !== undefined && mobileScore > 0) {
+        // Use desktop score if available, otherwise use mobile score for both
+        const effectiveDesktop = (desktopScore !== null && desktopScore !== undefined)
+          ? desktopScore
+          : mobileScore;
 
-      return Math.round(weightedScore);
+        // Weight mobile more heavily (70/30)
+        const weightedScore = (mobileScore * 0.7) + (effectiveDesktop * 0.3);
+
+        logger.debug({
+          auditId: this.auditId,
+          mobileScore,
+          desktopScore: effectiveDesktop,
+          weightedScore: Math.round(weightedScore)
+        }, 'Using PageSpeed scores');
+
+        return Math.round(weightedScore);
+      } else {
+        // PageSpeed API returned but scores are null/0 - fall back to load-time
+        logger.warn({
+          auditId: this.auditId,
+          mobileScore,
+          desktopScore
+        }, 'PageSpeed scores invalid, falling back to load-time estimation');
+      }
     }
 
-    // Otherwise use estimated score from fallback
-    return this.checks.estimatedScore || 0;
+    // Fall back to load-time estimation
+    const estimatedScore = this.checks.estimatedScore || 50; // Default to 50 if no data
+    const finalScore = Math.max(30, estimatedScore); // Never return less than 30
+
+    logger.debug({
+      auditId: this.auditId,
+      estimatedScore,
+      finalScore
+    }, 'Using load-time estimation for performance score');
+
+    return finalScore;
   }
 
   /**

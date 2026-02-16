@@ -50,7 +50,11 @@ class ContentQualityAnalyzer {
         highCount: this.issues.filter(i => i.severity === 'high').length,
         mediumCount: this.issues.filter(i => i.severity === 'medium').length,
         lowCount: this.issues.filter(i => i.severity === 'low').length,
-        checks: this.checks
+        checks: {
+          ...this.checks,
+          measurementMethod: 'crawl-analysis',
+          confidence: 'measured'
+        }
       };
 
       logger.info({
@@ -118,7 +122,11 @@ class ContentQualityAnalyzer {
         description: `${thinContent.length} pages have less than 300 words. Thin content can negatively impact SEO.`,
         recommendation: 'Expand content to at least 300-500 words per page. Add valuable, relevant information.',
         affectedPages: thinContent.length,
-        examples: thinContent.slice(0, 5)
+        examples: thinContent.slice(0, 5),
+        evidence: thinContent.slice(0, 5).map(item => ({
+          url: item.url,
+          detail: `${item.wordCount} words`
+        }))
       });
     }
 
@@ -193,7 +201,11 @@ class ContentQualityAnalyzer {
         description: `${similarTitles.length} keywords appear in multiple page titles, which may indicate keyword cannibalization.`,
         recommendation: 'Review pages targeting the same keywords and consolidate or differentiate them.',
         affectedPages: 0,
-        examples: similarTitles.slice(0, 3)
+        examples: similarTitles.slice(0, 3),
+        evidence: similarTitles.slice(0, 3).map(item => ({
+          url: null,
+          detail: `Keyword "${item.keyword}" appears in ${item.pageCount} titles (e.g., ${item.pages.slice(0, 2).map(p => p.title).join(', ')})`
+        }))
       });
     }
 
@@ -362,7 +374,11 @@ class ContentQualityAnalyzer {
         description: `Only ${percentageWithImages}% of pages have images. Visual content improves engagement.`,
         recommendation: 'Add relevant images, infographics, or videos to enhance content quality.',
         affectedPages: pagesWithoutImages.length,
-        examples: pagesWithoutImages.slice(0, 5)
+        examples: pagesWithoutImages.slice(0, 5),
+        evidence: pagesWithoutImages.slice(0, 5).map(url => ({
+          url,
+          detail: 'No images found'
+        }))
       });
     }
 
@@ -375,14 +391,15 @@ class ContentQualityAnalyzer {
 
   /**
    * Calculate Content Quality score
+   * More conservative scoring to match professional SEO tools
    */
   calculateScore() {
     const weights = {
       contentVolume: 35,
-      keywordCannibalization: 20,
+      keywordCannibalization: 25, // Increased from 20 - this is critical
       readability: 20,
       faqSections: 10,
-      multimediaPresence: 15
+      multimediaPresence: 10 // Reduced from 15
     };
 
     let totalScore = 0;
@@ -396,9 +413,11 @@ class ContentQualityAnalyzer {
 
     // Keyword cannibalization score (inverse - fewer issues = better)
     if (this.checks.keywordCannibalization) {
-      const score = this.checks.keywordCannibalization.potentialIssues === 0
-        ? 100
-        : Math.max(0, 100 - (this.checks.keywordCannibalization.potentialIssues * 10));
+      // More aggressive penalty for cannibalization
+      const issues = this.checks.keywordCannibalization.potentialIssues;
+      let score = 100;
+      if (issues > 0) score = Math.max(0, 100 - (issues * 15)); // Increased penalty from 10 to 15
+
       totalScore += score * weights.keywordCannibalization;
       totalWeight += weights.keywordCannibalization;
     }
@@ -409,16 +428,25 @@ class ContentQualityAnalyzer {
       totalWeight += weights.readability;
     }
 
-    // FAQ sections score (bonus for having them)
+    // FAQ sections score (more realistic - no free points)
     if (this.checks.faqSections) {
-      const score = this.checks.faqSections.percentageWithFAQ > 0 ? 100 : 60;
+      // 0 FAQs = 0%, not 60%! FAQs are a bonus, not a requirement
+      // But having them is a strong positive signal
+      const percentageWithFAQ = this.checks.faqSections.percentageWithFAQ || 0;
+      const score = percentageWithFAQ > 0 ? Math.min(100, percentageWithFAQ + 20) : 0;
+
       totalScore += score * weights.faqSections;
       totalWeight += weights.faqSections;
     }
 
-    // Multimedia presence score
+    // Multimedia presence score (more conservative)
     if (this.checks.multimediaPresence) {
-      totalScore += this.checks.multimediaPresence.percentageWithImages * weights.multimediaPresence;
+      // Penalize low image usage more heavily
+      const percentageWithImages = this.checks.multimediaPresence.percentageWithImages || 0;
+      let score = percentageWithImages;
+      if (percentageWithImages < 50) score = percentageWithImages * 0.7; // 30% penalty
+
+      totalScore += score * weights.multimediaPresence;
       totalWeight += weights.multimediaPresence;
     }
 

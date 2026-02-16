@@ -11,6 +11,7 @@ import prisma from '../../config/database.js';
 import logger from '../../config/logger.js';
 import SEOReportGenerator from '../../services/reporting/SEOReportGenerator.js';
 import EnhancedSEOReportGenerator from '../../services/reporting/EnhancedSEOReportGenerator.js';
+import ProfessionalSEOReportGenerator from '../../services/reporting/ProfessionalSEOReportGenerator.js';
 import { reportDownloadLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
@@ -18,17 +19,28 @@ const router = express.Router();
 /**
  * GET /api/report/:id/generate
  * Generate report (PDF or DOCX)
+ * Query params:
+ *   - format: 'pdf' or 'docx' (default: 'pdf')
+ *   - mode: 'basic', 'enhanced', or 'professional' (default: 'professional')
  */
 router.get('/:id/generate', reportDownloadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const format = req.query.format || 'pdf'; // pdf or docx
-    const enhanced = req.query.enhanced === 'true'; // Use enhanced generator
+    const mode = req.query.mode || 'professional'; // basic, enhanced, or professional
+    const enhanced = req.query.enhanced === 'true'; // Backward compat
 
     // Validate format
     if (!['pdf', 'docx'].includes(format.toLowerCase())) {
       return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
         errorResponse('Invalid format. Use "pdf" or "docx"', 'INVALID_FORMAT')
+      );
+    }
+
+    // Validate mode
+    if (!['basic', 'enhanced', 'professional'].includes(mode.toLowerCase())) {
+      return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
+        errorResponse('Invalid mode. Use "basic", "enhanced", or "professional"', 'INVALID_MODE')
       );
     }
 
@@ -55,21 +67,28 @@ router.get('/:id/generate', reportDownloadLimiter, async (req, res) => {
     }
 
     // Generate report
-    logger.info({ auditId: id, format, enhanced }, 'Generating report');
+    const finalMode = enhanced ? 'enhanced' : mode.toLowerCase();
+    logger.info({ auditId: id, format, mode: finalMode }, 'Generating report');
 
-    // Use enhanced generator by default, fallback to basic if specified
-    const generator = enhanced || format.toLowerCase() === 'pdf'
-      ? new EnhancedSEOReportGenerator(id)
-      : new SEOReportGenerator(id);
+    // Select generator based on mode
+    let generator;
+    if (finalMode === 'professional') {
+      generator = new ProfessionalSEOReportGenerator(id);
+    } else if (finalMode === 'enhanced') {
+      generator = new EnhancedSEOReportGenerator(id);
+    } else {
+      generator = new SEOReportGenerator(id);
+    }
+
     let filepath;
 
     if (format.toLowerCase() === 'pdf') {
       filepath = await generator.generatePDF();
     } else {
       // DOCX only available in basic generator
-      if (enhanced) {
+      if (finalMode !== 'basic') {
         return res.status(HTTP_STATUS.BAD_REQUEST).json(
-          errorResponse('Enhanced reports are only available in PDF format', 'INVALID_FORMAT_COMBINATION')
+          errorResponse('DOCX format is only available with basic mode', 'INVALID_FORMAT_COMBINATION')
         );
       }
       filepath = await generator.generateDOCX();
@@ -82,10 +101,10 @@ router.get('/:id/generate', reportDownloadLimiter, async (req, res) => {
     res.json(successResponse({
       auditId: id,
       format: format.toLowerCase(),
-      enhanced: enhanced || format.toLowerCase() === 'pdf',
+      mode: finalMode,
       filename,
       fileSize: fileStats.size,
-      downloadUrl: `/api/report/${id}/download?format=${format.toLowerCase()}&enhanced=${enhanced || format.toLowerCase() === 'pdf'}`,
+      downloadUrl: `/api/report/${id}/download?format=${format.toLowerCase()}&mode=${finalMode}`,
       generatedAt: new Date().toISOString()
     }, 'Report generated successfully'));
 
@@ -100,17 +119,28 @@ router.get('/:id/generate', reportDownloadLimiter, async (req, res) => {
 /**
  * GET /api/report/:id/download
  * Download generated report
+ * Query params:
+ *   - format: 'pdf' or 'docx' (default: 'pdf')
+ *   - mode: 'basic', 'enhanced', or 'professional' (default: 'professional')
  */
 router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const format = req.query.format || 'pdf';
-    const enhanced = req.query.enhanced === 'true' || format.toLowerCase() === 'pdf';
+    const mode = req.query.mode || 'professional';
+    const enhanced = req.query.enhanced === 'true'; // Backward compat
 
     // Validate format
     if (!['pdf', 'docx'].includes(format.toLowerCase())) {
       return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
         errorResponse('Invalid format. Use "pdf" or "docx"', 'INVALID_FORMAT')
+      );
+    }
+
+    // Validate mode
+    if (!['basic', 'enhanced', 'professional'].includes(mode.toLowerCase())) {
+      return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
+        errorResponse('Invalid mode. Use "basic", "enhanced", or "professional"', 'INVALID_MODE')
       );
     }
 
@@ -137,7 +167,8 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
       );
     }
 
-    // Build file path - enhanced generator uses different naming
+    // Build file path
+    const finalMode = enhanced ? 'enhanced' : mode.toLowerCase();
     const extension = format.toLowerCase();
     const domain = new URL(audit.targetUrl).hostname.replace('www.', '');
     let filename, filepath;
@@ -148,8 +179,8 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
       fs.mkdirSync(reportsDir, { recursive: true });
     }
 
-    if (enhanced && format.toLowerCase() === 'pdf') {
-      // Enhanced PDF uses date-based naming
+    // Professional and Enhanced generators use date-based naming
+    if ((finalMode === 'professional' || finalMode === 'enhanced') && format.toLowerCase() === 'pdf') {
       // Try to find existing file with same domain and today's date
       const todayDateStr = new Date().toISOString().split('T')[0];
       const expectedFilename = `seo-audit-${domain}-${todayDateStr}.pdf`;
@@ -178,19 +209,24 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
 
     // Check if file exists, if not generate it
     if (!fs.existsSync(filepath)) {
-      logger.info({ auditId: id, format, enhanced }, 'Report not found, generating...');
+      logger.info({ auditId: id, format, mode: finalMode }, 'Report not found, generating...');
 
-      const generator = enhanced
-        ? new EnhancedSEOReportGenerator(id)
-        : new SEOReportGenerator(id);
+      let generator;
+      if (finalMode === 'professional') {
+        generator = new ProfessionalSEOReportGenerator(id);
+      } else if (finalMode === 'enhanced') {
+        generator = new EnhancedSEOReportGenerator(id);
+      } else {
+        generator = new SEOReportGenerator(id);
+      }
 
       if (format.toLowerCase() === 'pdf') {
         filepath = await generator.generatePDF();
         filename = path.basename(filepath);
       } else {
-        if (enhanced) {
+        if (finalMode !== 'basic') {
           return res.status(HTTP_STATUS.BAD_REQUEST).json(
-            errorResponse('Enhanced reports are only available in PDF format', 'INVALID_FORMAT_COMBINATION')
+            errorResponse('DOCX format is only available with basic mode', 'INVALID_FORMAT_COMBINATION')
           );
         }
         await generator.generateDOCX();
@@ -202,7 +238,7 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
       ? 'application/pdf'
       : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    const downloadFilename = enhanced
+    const downloadFilename = (finalMode === 'professional' || finalMode === 'enhanced')
       ? filename
       : `seo-audit-${audit.domain.replace(/\./g, '-')}-${new Date().toISOString().split('T')[0]}.${extension}`;
 
@@ -222,7 +258,7 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
       }
     });
 
-    logger.info({ auditId: id, format, enhanced, filename: downloadFilename }, 'Report downloaded');
+    logger.info({ auditId: id, format, mode: finalMode, filename: downloadFilename }, 'Report downloaded');
 
   } catch (error) {
     logger.error({ err: error, auditId: req.params.id }, 'Failed to download report');
