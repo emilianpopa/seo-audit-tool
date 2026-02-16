@@ -97,14 +97,30 @@ class ProfessionalSEOReportGenerator {
     const page = await browser.newPage();
     await page.setContent(fullHTML, { waitUntil: 'networkidle0' });
 
+    // Wait for fonts and layout stability
+    await page.evaluateHandle('document.fonts.ready');
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     await page.pdf({
       path: filepath,
       format: 'A4',
       printBackground: true,
+      preferCSSPageSize: false,
+      displayHeaderFooter: true,
+      headerTemplate: `
+        <div style="font-size: 8px; color: #999; width: 100%; text-align: center; padding: 10px 0;">
+          SEO Audit Report • ${domain}
+        </div>
+      `,
+      footerTemplate: `
+        <div style="font-size: 8px; color: #999; width: 100%; text-align: right; padding: 10px 40px 0 0;">
+          Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+        </div>
+      `,
       margin: {
-        top: '15mm',
+        top: '20mm',
         right: '12mm',
-        bottom: '15mm',
+        bottom: '20mm',
         left: '12mm'
       }
     });
@@ -273,6 +289,10 @@ class ProfessionalSEOReportGenerator {
     let html = '<h1>2. Detailed Findings</h1>\n';
     html += '<p>Each issue includes <strong>specific evidence</strong> from the crawl, showing exactly which pages are affected and what was detected.</p>\n\n';
 
+    // Select only the most impactful issues (12-15 total)
+    const selectedIssues = this.selectIssuesForReport(this.audit.recommendations);
+    const selectedIds = new Set(selectedIssues.map(i => i.id));
+
     const categories = {
       'TECHNICAL_SEO': 'A. Technical SEO',
       'ON_PAGE_SEO': 'B. On-Page SEO',
@@ -283,13 +303,14 @@ class ProfessionalSEOReportGenerator {
     };
 
     for (const [categoryKey, categoryTitle] of Object.entries(categories)) {
-      const categoryIssues = this.audit.recommendations.filter(r => r.category === categoryKey);
+      // Only show issues that are in the selected set
+      const categoryIssues = selectedIssues.filter(r => r.category === categoryKey);
 
       if (categoryIssues.length === 0) continue;
 
       html += `<h2>${categoryTitle}</h2>\n`;
 
-      for (const issue of categoryIssues.slice(0, 8)) { // Limit per category
+      for (const issue of categoryIssues) {
         html += this.buildIssueCard(issue);
       }
 
@@ -322,15 +343,18 @@ class ProfessionalSEOReportGenerator {
   <div class="issue-evidence">
     <div class="issue-evidence-label">Evidence:</div>
 `;
-      for (const ev of evidence.slice(0, 3)) { // Max 3 examples
+      for (const ev of evidence.slice(0, 2)) { // Max 2 examples
         if (ev.url) {
-          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(ev.url)}${ev.detail ? ` - ${this.escapeHTML(ev.detail)}` : ''}</div>\n`;
+          const displayUrl = ev.url.length > 60
+            ? ev.url.substring(0, 57) + '...'
+            : ev.url;
+          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(displayUrl)}${ev.detail ? ` - ${this.escapeHTML(ev.detail)}` : ''}</div>\n`;
         } else if (ev.detail) {
           html += `    <div>• ${this.escapeHTML(ev.detail)}</div>\n`;
         }
       }
-      if (issue.affectedPages > 3) {
-        html += `    <div class="text-gray">...and ${issue.affectedPages - 3} more pages</div>\n`;
+      if (issue.affectedPages > 2) {
+        html += `    <div class="text-gray">...and ${issue.affectedPages - 2} more pages</div>\n`;
       }
       html += `  </div>\n`;
     }
@@ -432,16 +456,16 @@ class ProfessionalSEOReportGenerator {
    * Build realistic 30/60/90 day roadmap
    */
   buildRoadmap() {
-    const quickWins = this.audit.recommendations.filter(r => r.effortLevel === 'QUICK_WIN').slice(0, 5);
+    const quickWins = this.audit.recommendations.filter(r => r.effortLevel === 'QUICK_WIN').slice(0, 4);
     const month1 = this.audit.recommendations.filter(r =>
       ['CRITICAL', 'HIGH'].includes(r.priority) && r.effortLevel !== 'QUICK_WIN'
-    ).slice(0, 8);
+    ).slice(0, 4);
     const month2 = this.audit.recommendations.filter(r =>
       r.priority === 'MEDIUM'
-    ).slice(0, 6);
+    ).slice(0, 4);
     const month3 = this.audit.recommendations.filter(r =>
       r.priority === 'LOW'
-    ).slice(0, 5);
+    ).slice(0, 4);
 
     let html = `
 <h1>4. Implementation Roadmap</h1>
@@ -630,6 +654,40 @@ class ProfessionalSEOReportGenerator {
       level: 'MEASURED',
       note: null
     };
+  }
+
+  /**
+   * Select most impactful issues for report
+   * Limits to ~12-15 issues total for 8-12 page target
+   */
+  selectIssuesForReport(allRecommendations) {
+    const selected = [];
+
+    // Always include all critical (max 5 to be safe)
+    const critical = allRecommendations
+      .filter(r => r.priority === 'CRITICAL')
+      .slice(0, 5);
+    selected.push(...critical);
+
+    // High priority - prefer quick wins, then by affected pages
+    const high = allRecommendations
+      .filter(r => r.priority === 'HIGH')
+      .sort((a, b) => {
+        if (a.effortLevel === 'QUICK_WIN' && b.effortLevel !== 'QUICK_WIN') return -1;
+        if (b.effortLevel === 'QUICK_WIN' && a.effortLevel !== 'QUICK_WIN') return 1;
+        return (b.affectedPages || 0) - (a.affectedPages || 0);
+      })
+      .slice(0, 5);
+    selected.push(...high);
+
+    // Medium - only quick wins or high impact (10+ affected pages)
+    const medium = allRecommendations
+      .filter(r => r.priority === 'MEDIUM')
+      .filter(r => r.effortLevel === 'QUICK_WIN' || (r.affectedPages || 0) > 10)
+      .slice(0, 3);
+    selected.push(...medium);
+
+    return selected; // Total: ~13 issues
   }
 
   /**
