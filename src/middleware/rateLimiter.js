@@ -67,11 +67,11 @@ export function createRateLimiter(options = {}) {
 
 /**
  * Audit creation rate limiter
- * Limit: 10 audits per hour per IP (configurable via env)
+ * Limit: 50 audits per hour per IP (configurable via env)
  */
 export const auditCreationLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: parseInt(process.env.AUDIT_CREATION_LIMIT || '10'),
+  max: parseInt(process.env.AUDIT_CREATION_LIMIT || '50'),
   message: 'Too many audit requests. Please try again later.',
   keyGenerator: (req) => {
     // Use user ID if authenticated, otherwise IP
