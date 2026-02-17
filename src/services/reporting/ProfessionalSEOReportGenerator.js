@@ -144,7 +144,7 @@ class ProfessionalSEOReportGenerator {
     sections.push(this.buildRoadmap());
 
     // Optional: Appendix (if needed)
-    if (this.audit.pages.length > 20) {
+    if (this.audit.pages.length > 50) {
       sections.push(this.buildAppendix());
     }
 
@@ -248,7 +248,7 @@ class ProfessionalSEOReportGenerator {
   <div class="score-bar-details">
     ${this.formatRating(result.rating)} •
     ${result.criticalCount} critical, ${result.highCount} high, ${result.mediumCount} medium, ${result.lowCount} low issues
-    ${confidence.note ? `<br/>${confidence.note}` : ''}
+    ${confidence.note ? `<br/>${this.escapeHTML(this.truncate(confidence.note, 120))}` : ''}
   </div>
 </div>
 `;
@@ -317,10 +317,10 @@ class ProfessionalSEOReportGenerator {
     let html = `
 <div class="issue-card ${severity}">
   <div class="issue-header">
-    <span class="issue-title">${this.escapeHTML(issue.title)}</span>
+    <span class="issue-title">${this.escapeHTML(this.truncate(issue.title, 80))}</span>
     <span class="issue-severity ${severity}">${issue.priority}</span>
   </div>
-  <div class="issue-description">${this.escapeHTML(issue.description)}</div>
+  <div class="issue-description">${this.escapeHTML(this.truncate(issue.description, 250))}</div>
 `;
 
     // Add evidence if available
@@ -334,9 +334,9 @@ class ProfessionalSEOReportGenerator {
           const displayUrl = ev.url.length > 60
             ? ev.url.substring(0, 57) + '...'
             : ev.url;
-          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(displayUrl)}${ev.detail ? ` - ${this.escapeHTML(ev.detail)}` : ''}</div>\n`;
+          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(displayUrl)}${ev.detail ? ` - ${this.escapeHTML(this.truncate(ev.detail, 80))}` : ''}</div>\n`;
         } else if (ev.detail) {
-          html += `    <div>• ${this.escapeHTML(ev.detail)}</div>\n`;
+          html += `    <div>• ${this.escapeHTML(this.truncate(ev.detail, 100))}</div>\n`;
         }
       }
       if (issue.affectedPages > 2) {
@@ -347,12 +347,12 @@ class ProfessionalSEOReportGenerator {
 
     // Recommendation
     if (issue.implementation) {
-      html += `  <div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(issue.implementation)}</div>\n`;
+      html += `  <div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(this.truncate(issue.implementation, 200))}</div>\n`;
     }
 
     // Impact
     if (issue.expectedImpact) {
-      html += `  <div class="issue-impact">Impact: ${this.escapeHTML(issue.expectedImpact)}</div>\n`;
+      html += `  <div class="issue-impact">Impact: ${this.escapeHTML(this.truncate(issue.expectedImpact, 150))}</div>\n`;
     }
 
     html += `</div>\n`;
@@ -467,7 +467,7 @@ class ProfessionalSEOReportGenerator {
       <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Quick'} •
-        ${this.escapeHTML(task.expectedImpact || 'Immediate improvement')}
+        ${this.escapeHTML(this.truncate(task.expectedImpact || 'Immediate improvement', 120))}
       </div>
     </div>
 `;
@@ -489,7 +489,7 @@ class ProfessionalSEOReportGenerator {
       <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Medium effort'} •
-        ${this.escapeHTML(task.expectedImpact || 'Improves core SEO metrics')}
+        ${this.escapeHTML(this.truncate(task.expectedImpact || 'Improves core SEO metrics', 120))}
       </div>
     </div>
 `;
@@ -511,7 +511,7 @@ class ProfessionalSEOReportGenerator {
       <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Standard effort'} •
-        ${this.escapeHTML(task.expectedImpact || 'Enhances user experience')}
+        ${this.escapeHTML(this.truncate(task.expectedImpact || 'Enhances user experience', 120))}
       </div>
     </div>
 `;
@@ -533,7 +533,7 @@ class ProfessionalSEOReportGenerator {
       <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'As capacity allows'} •
-        ${this.escapeHTML(task.expectedImpact || 'Long-term improvement')}
+        ${this.escapeHTML(this.truncate(task.expectedImpact || 'Long-term improvement', 120))}
       </div>
     </div>
 `;
@@ -581,7 +581,7 @@ class ProfessionalSEOReportGenerator {
     for (const page of samplePages) {
       html += `
     <tr>
-      <td class="text-xs">${this.escapeHTML(page.path || page.url)}</td>
+      <td class="text-xs">${this.escapeHTML(this.truncate(page.path || page.url, 60))}</td>
       <td>${page.statusCode || 'N/A'}</td>
       <td>${page.wordCount || 0}</td>
       <td>${page.imageCount || 0}</td>
@@ -669,7 +669,7 @@ class ProfessionalSEOReportGenerator {
       .slice(0, 3);
     selected.push(...medium);
 
-    return selected; // Total: ~13 issues
+    return selected.slice(0, 13); // Hard cap at 13 issues
   }
 
   /**
@@ -760,6 +760,15 @@ class ProfessionalSEOReportGenerator {
     return rating.split(' ').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
+  }
+
+  /**
+   * Truncate text to a maximum length
+   */
+  truncate(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
   }
 
   /**
