@@ -617,7 +617,7 @@ class EnhancedSEOReportGenerator {
 
         // Expected Impact
         doc.fontSize(9).fillColor('#2E7D32')
-          .text(`Expected Impact: ${fix.expectedImpact}`, { indent: 20, italics: true });
+          .text(`Expected Impact: ${this.truncate(fix.expectedImpact, 150)}`, { indent: 20, italics: true });
 
         doc.moveDown(0.8);
       }
