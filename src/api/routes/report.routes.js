@@ -190,17 +190,9 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
         filename = expectedFilename;
         filepath = expectedPath;
       } else {
-        // Check if any file for this domain exists today
-        const files = fs.readdirSync(reportsDir);
-        const matchingFile = files.find(f => f.startsWith(`seo-audit-${domain}`) && f.endsWith('.pdf'));
-
-        if (matchingFile) {
-          filename = matchingFile;
-          filepath = path.join(reportsDir, filename);
-        } else {
-          filename = expectedFilename;
-          filepath = expectedPath;
-        }
+        // No cached file for today - will trigger regeneration below
+        filename = expectedFilename;
+        filepath = expectedPath;
       }
     } else {
       filename = `seo-audit-${id}.${extension}`;
@@ -268,6 +260,44 @@ router.get('/:id/download', reportDownloadLimiter, async (req, res) => {
         errorResponse('Failed to download report', 'REPORT_DOWNLOAD_ERROR')
       );
     }
+  }
+});
+
+/**
+ * GET /api/report/:id/debug-html
+ * Download the debug HTML file saved alongside the PDF
+ * Use this to inspect what Puppeteer receives before PDF conversion
+ */
+router.get('/:id/debug-html', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const audit = await prisma.seoAudit.findUnique({
+      where: { id },
+      select: { targetUrl: true }
+    });
+
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json(notFoundResponse('Audit', id));
+    }
+
+    const domain = new URL(audit.targetUrl).hostname.replace('www.', '');
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const htmlPath = path.join(process.cwd(), 'reports', `seo-audit-${domain}-${todayDateStr}.html`);
+
+    if (fs.existsSync(htmlPath)) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      fs.createReadStream(htmlPath).pipe(res);
+    } else {
+      res.status(HTTP_STATUS.NOT_FOUND).json(
+        errorResponse('HTML debug file not found. Generate a report first using /generate endpoint.', 'DEBUG_HTML_NOT_FOUND')
+      );
+    }
+  } catch (error) {
+    logger.error({ err: error, auditId: req.params.id }, 'Failed to serve debug HTML');
+    res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+      errorResponse('Failed to serve debug HTML', 'DEBUG_HTML_ERROR')
+    );
   }
 });
 

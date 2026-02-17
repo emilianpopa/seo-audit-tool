@@ -82,6 +82,11 @@ class ProfessionalSEOReportGenerator {
     const template = fs.readFileSync(this.templatePath, 'utf-8');
     const fullHTML = template.replace('{{content}}', htmlContent).replace('{{domain}}', domain);
 
+    // Save HTML for debugging - lets us inspect what Puppeteer receives
+    const htmlDebugPath = filepath.replace('.pdf', '.html');
+    fs.writeFileSync(htmlDebugPath, fullHTML);
+    logger.info({ htmlDebugPath }, 'Saved HTML debug file alongside PDF');
+
     // Convert to PDF using Puppeteer
     const browser = await puppeteer.launch({
       headless: 'new',
