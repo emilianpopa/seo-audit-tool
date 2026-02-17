@@ -445,24 +445,14 @@ class EnhancedSEOReportGenerator {
 
         // Current state
         doc.fontSize(9).fillColor('#666666').text(
-          issue.description,
+          this.truncate(issue.description, 160),
           { indent: 20, align: 'justify' }
         );
 
-        // Add specific examples if available
-        const examples = this.getIssueExamples(issue);
-        if (examples) {
-          doc.fontSize(8).fillColor('#888888').text(
-            examples,
-            { indent: 30, italics: true }
-          );
-        }
-
-        // Affected pages with more detail
+        // Affected pages
         if (issue.affectedPages > 0) {
-          const pageExamples = this.getAffectedPageExamples(issue);
           doc.fontSize(9).fillColor('#666666').text(
-            `Affected pages: ${issue.affectedPages}${pageExamples ? ` (Examples: ${pageExamples})` : ''}`,
+            `Affected pages: ${issue.affectedPages}`,
             { indent: 20, italics: true }
           );
         }
@@ -470,7 +460,7 @@ class EnhancedSEOReportGenerator {
         // Add impact explanation
         if (issue.expectedImpact) {
           doc.fontSize(8).fillColor('#888888').text(
-            `Impact: ${issue.expectedImpact}`,
+            `Impact: ${this.truncate(issue.expectedImpact, 120)}`,
             { indent: 20, italics: true }
           );
         }
@@ -609,11 +599,11 @@ class EnhancedSEOReportGenerator {
 
         // Current State
         doc.fontSize(9).fillColor('#666666')
-          .text(`Current State: ${fix.description}`, { indent: 20, align: 'justify' });
+          .text(`Current State: ${this.truncate(fix.description, 160)}`, { indent: 20, align: 'justify' });
 
         // Recommended solution
         if (fix.implementation) {
-          doc.text(`Recommended: ${fix.implementation}`, { indent: 20, align: 'justify' });
+          doc.text(`Recommended: ${this.truncate(fix.implementation, 160)}`, { indent: 20, align: 'justify' });
         }
 
         // Implementation Steps - top 3 only
@@ -1676,6 +1666,15 @@ class EnhancedSEOReportGenerator {
       'LOCAL_SEO': 'Local SEO'
     };
     return names[category] || category;
+  }
+
+  /**
+   * Truncate text to a maximum length
+   */
+  truncate(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
   }
 
   /**
