@@ -423,7 +423,7 @@ class EnhancedSEOReportGenerator {
       doc.moveDown(0.5);
 
       let issueNumber = 1;
-      for (const issue of issues) {
+      for (const issue of issues.slice(0, 5)) {
         if (doc.y > 650) {
           this.addPageFooter(doc);
           doc.addPage();
@@ -598,7 +598,7 @@ class EnhancedSEOReportGenerator {
         .text(`● ${groupTitle}`, { underline: true });
       doc.moveDown(0.5);
 
-      for (const fix of fixes.slice(0, 8)) {  // Increased from 5 to 8
+      for (const fix of fixes.slice(0, 3)) {
         if (doc.y > 650) {
           this.addPageFooter(doc);
           doc.addPage();
@@ -698,23 +698,23 @@ class EnhancedSEOReportGenerator {
     const improvementSections = [
       {
         title: 'A. UX/UI Improvements',
-        items: this.getUXImprovements()
+        items: this.getUXImprovements().slice(0, 4)
       },
       {
         title: 'B. Conversion Rate Optimization (CRO)',
-        items: this.getCROImprovements()
+        items: this.getCROImprovements().slice(0, 4)
       },
       {
         title: 'C. Content Strategy & Marketing',
-        items: this.getContentStrategyImprovements()
+        items: this.getContentStrategyImprovements().slice(0, 3)
       },
       {
         title: 'D. Technical & Performance Optimizations',
-        items: this.getTechnicalImprovements()
+        items: this.getTechnicalImprovements().slice(0, 3)
       },
       {
         title: 'E. Analytics & Tracking Improvements',
-        items: this.getAnalyticsImprovements()
+        items: this.getAnalyticsImprovements().slice(0, 3)
       }
     ];
 
