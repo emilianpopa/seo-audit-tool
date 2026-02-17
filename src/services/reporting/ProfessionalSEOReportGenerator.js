@@ -95,32 +95,18 @@ class ProfessionalSEOReportGenerator {
     });
 
     const page = await browser.newPage();
+    // Set viewport to A4 width for consistent rendering
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(fullHTML, { waitUntil: 'networkidle0' });
-
-    // Wait for fonts and layout stability
-    await page.evaluateHandle('document.fonts.ready');
-    await new Promise(resolve => setTimeout(resolve, 500));
 
     await page.pdf({
       path: filepath,
       format: 'A4',
       printBackground: true,
-      preferCSSPageSize: false,
-      displayHeaderFooter: true,
-      headerTemplate: `
-        <div style="font-size: 8px; color: #999; width: 100%; text-align: center; padding: 10px 0;">
-          SEO Audit Report • ${domain}
-        </div>
-      `,
-      footerTemplate: `
-        <div style="font-size: 8px; color: #999; width: 100%; text-align: right; padding: 10px 40px 0 0;">
-          Page <span class="pageNumber"></span> of <span class="totalPages"></span>
-        </div>
-      `,
       margin: {
-        top: '20mm',
+        top: '15mm',
         right: '12mm',
-        bottom: '20mm',
+        bottom: '15mm',
         left: '12mm'
       }
     });
@@ -214,8 +200,6 @@ class ProfessionalSEOReportGenerator {
     <strong>Quick Wins Available:</strong> ${this.getTopQuickWinsText()}
   </div>
 </div>
-
-<div class="page-break"></div>
 `;
   }
 
@@ -275,8 +259,6 @@ class ProfessionalSEOReportGenerator {
   <li><strong class="confidence-badge confidence-estimated">ESTIMATED</strong> - Score based on fallback analysis or limited data</li>
   <li><strong class="confidence-badge confidence-notmeasured">NOT MEASURED</strong> - Requires external API (not configured)</li>
 </ul>
-
-<div class="page-break"></div>
 `;
 
     return html;
@@ -317,7 +299,6 @@ class ProfessionalSEOReportGenerator {
       html += '\n';
     }
 
-    html += '<div class="page-break"></div>\n';
     return html;
   }
 
@@ -445,8 +426,6 @@ class ProfessionalSEOReportGenerator {
     </tr>
   </tbody>
 </table>
-
-<div class="page-break"></div>
 `;
 
     return html;
@@ -565,8 +544,6 @@ class ProfessionalSEOReportGenerator {
   Organic Traffic: Baseline → 2-3x increase<br/>
   Keyword Rankings: New top-10 rankings for 20-30 target keywords
 </div>
-
-<div class="page-break"></div>
 `;
 
     return html;
