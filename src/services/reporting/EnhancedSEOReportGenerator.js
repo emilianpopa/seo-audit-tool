@@ -423,7 +423,7 @@ class EnhancedSEOReportGenerator {
       doc.moveDown(0.5);
 
       let issueNumber = 1;
-      for (const issue of issues.slice(0, 5)) {
+      for (const issue of issues.slice(0, 3)) {
         if (doc.y > 650) {
           this.addPageFooter(doc);
           doc.addPage();
@@ -598,7 +598,7 @@ class EnhancedSEOReportGenerator {
         .text(`● ${groupTitle}`, { underline: true });
       doc.moveDown(0.5);
 
-      for (const fix of fixes.slice(0, 3)) {
+      for (const fix of fixes.slice(0, 2)) {
         if (doc.y > 650) {
           this.addPageFooter(doc);
           doc.addPage();
@@ -616,28 +616,20 @@ class EnhancedSEOReportGenerator {
           doc.text(`Recommended: ${fix.implementation}`, { indent: 20, align: 'justify' });
         }
 
-        // Implementation Steps - Add detailed steps
+        // Implementation Steps - top 3 only
         const steps = this.getImplementationSteps(fix);
         if (steps && steps.length > 0) {
-          doc.fontSize(8).fillColor('#666666').text('Implementation Steps:', { indent: 20 });
-          for (const step of steps) {
+          doc.fontSize(8).fillColor('#666666').text('Steps:', { indent: 20 });
+          for (const step of steps.slice(0, 3)) {
             doc.text(`  • ${step}`, { indent: 25, align: 'justify' });
           }
-        }
-
-        // Code examples if applicable
-        const codeExample = this.getCodeExample(fix);
-        if (codeExample) {
-          doc.fontSize(7).fillColor('#1E293B').font('Courier')
-            .text(codeExample, { indent: 30, align: 'left' });
-          doc.font('Helvetica');
         }
 
         // Expected Impact
         doc.fontSize(9).fillColor('#2E7D32')
           .text(`Expected Impact: ${fix.expectedImpact}`, { indent: 20, italics: true });
 
-        doc.moveDown(1);
+        doc.moveDown(0.8);
       }
     }
 
@@ -698,23 +690,23 @@ class EnhancedSEOReportGenerator {
     const improvementSections = [
       {
         title: 'A. UX/UI Improvements',
-        items: this.getUXImprovements().slice(0, 4)
+        items: this.getUXImprovements().slice(0, 3)
       },
       {
         title: 'B. Conversion Rate Optimization (CRO)',
-        items: this.getCROImprovements().slice(0, 4)
+        items: this.getCROImprovements().slice(0, 3)
       },
       {
         title: 'C. Content Strategy & Marketing',
-        items: this.getContentStrategyImprovements().slice(0, 3)
+        items: this.getContentStrategyImprovements().slice(0, 2)
       },
       {
         title: 'D. Technical & Performance Optimizations',
-        items: this.getTechnicalImprovements().slice(0, 3)
+        items: this.getTechnicalImprovements().slice(0, 2)
       },
       {
         title: 'E. Analytics & Tracking Improvements',
-        items: this.getAnalyticsImprovements().slice(0, 3)
+        items: this.getAnalyticsImprovements().slice(0, 2)
       }
     ];
 
