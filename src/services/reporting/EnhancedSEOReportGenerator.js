@@ -98,9 +98,6 @@ class EnhancedSEOReportGenerator {
         logger.info({ auditId: this.auditId }, 'Building cover page');
         this.buildCoverPage(doc);
 
-        logger.info({ auditId: this.auditId }, 'Building scoring model');
-        this.buildScoringModelExplanation(doc);
-
         logger.info({ auditId: this.auditId }, 'Building score breakdown');
         this.buildScoreBreakdown(doc);
 
@@ -246,57 +243,6 @@ class EnhancedSEOReportGenerator {
       centerY + 10,
       { width: doc.page.width, align: 'center' }
     );
-
-    this.addPageFooter(doc);
-    doc.addPage();
-  }
-
-  /**
-   * Build scoring model explanation
-   */
-  buildScoringModelExplanation(doc) {
-    this.addSectionHeader(doc, '1. SEO Score (0-100)');
-
-    doc.fontSize(16).fillColor('#000000').text('Overall SEO Performance');
-    doc.moveDown(1);
-
-    // Large centered score circle
-    const centerX = doc.page.width / 2;
-    const centerY = doc.y + 100;
-    const radius = 80;
-
-    doc.circle(centerX, centerY, radius)
-      .fillColor(this.getScoreColor(this.audit.overallScore))
-      .fill();
-
-    doc.fillColor('#FFFFFF').fontSize(56).text(
-      this.audit.overallScore.toString(),
-      0,
-      centerY - 30,
-      { width: doc.page.width, align: 'center' }
-    );
-
-    doc.fontSize(16).text(
-      '/100',
-      0,
-      centerY + 20,
-      { width: doc.page.width, align: 'center' }
-    );
-
-    doc.fillColor('#000000').moveDown(8);
-
-    // Explanation
-    doc.fontSize(14).text('Scoring Model Explanation');
-    doc.moveDown(0.5);
-
-    doc.fontSize(10).fillColor('#333333').text(
-      'The SEO score is calculated using a weighted average of six core categories, based on industry best practices and Google\'s ranking factors. Each category contributes to the overall score based on its impact on search visibility and user experience.',
-      { align: 'justify' }
-    );
-
-    doc.moveDown(1);
-    doc.fontSize(14).fillColor('#000000').text('Score Breakdown by Category');
-    doc.moveDown(0.5);
 
     this.addPageFooter(doc);
     doc.addPage();
@@ -493,27 +439,10 @@ class EnhancedSEOReportGenerator {
     // Identify strengths based on high scores
     const strengths = this.identifyStrengths();
 
-    for (const strength of strengths) {
-      doc.fontSize(11).fillColor('#000000').text(`✓ ${strength.title}`, {
-        indent: 10
-      });
-
-      doc.fontSize(9).fillColor('#666666').text(
-        strength.description,
-        { indent: 20, align: 'justify' }
-      );
-
-      doc.fillColor('#2E7D32').fontSize(9).text(
-        `Preserve: ${strength.preservation}`,
-        { indent: 20, italics: true }
-      );
-
-      doc.moveDown(0.8);
-
-      if (doc.y > 680) {
-        this.addPageFooter(doc);
-        doc.addPage();
-      }
+    for (const strength of strengths.slice(0, 4)) {
+      doc.fontSize(10).fillColor('#000000').text(`✓ ${strength.title}`, { indent: 10, continued: true });
+      doc.fontSize(9).fillColor('#666666').text(` — ${this.truncate(strength.description, 100)}`, { align: 'left' });
+      doc.moveDown(0.3);
     }
 
     this.addPageFooter(doc);
@@ -604,15 +533,6 @@ class EnhancedSEOReportGenerator {
         // Recommended solution
         if (fix.implementation) {
           doc.text(`Recommended: ${this.truncate(fix.implementation, 160)}`, { indent: 20, align: 'justify' });
-        }
-
-        // Implementation Steps - top 3 only
-        const steps = this.getImplementationSteps(fix);
-        if (steps && steps.length > 0) {
-          doc.fontSize(8).fillColor('#666666').text('Steps:', { indent: 20 });
-          for (const step of steps.slice(0, 3)) {
-            doc.text(`  • ${step}`, { indent: 25, align: 'justify' });
-          }
         }
 
         // Expected Impact
@@ -710,40 +630,16 @@ class EnhancedSEOReportGenerator {
       doc.moveDown(0.5);
 
       for (const item of section.items) {
-        if (doc.y > 650) {
-          this.addPageFooter(doc);
-          doc.addPage();
-        }
-
-        // Item title
-        doc.fontSize(10).fillColor('#000000').text(`• ${item.title}`, { indent: 10 });
-
-        // Description
-        doc.fontSize(9).fillColor('#666666').text(item.description, { indent: 20, align: 'justify' });
-
-        // Tools (if available)
-        if (item.tools) {
-          doc.fontSize(8).fillColor('#888888').text(
-            `Tools: ${item.tools}`,
-            { indent: 20, italics: true }
-          );
-        }
-
-        // Effort (if available)
-        if (item.effort) {
-          doc.fontSize(8).fillColor('#888888').text(
-            `Effort: ${item.effort}`,
-            { indent: 20, italics: true }
-          );
-        }
-
-        // Impact
-        doc.fontSize(9).fillColor('#2E7D32').text(
-          `Impact: ${item.impact}`,
-          { indent: 20, italics: true }
+        // Title + impact only — one line each
+        doc.fontSize(10).fillColor('#000000').text(
+          `• ${item.title}`,
+          { indent: 10, continued: true }
         );
-
-        doc.moveDown(0.7);
+        doc.fontSize(9).fillColor('#2E7D32').text(
+          ` — ${this.truncate(item.impact, 80)}`,
+          { align: 'left' }
+        );
+        doc.moveDown(0.3);
       }
 
       doc.moveDown(0.5);
@@ -908,44 +804,7 @@ class EnhancedSEOReportGenerator {
     this.addSimpleTable(doc, metricsData);
     doc.moveDown(1);
 
-    // Tools & Resources
-    if (doc.y > 600) {
-      this.addPageFooter(doc);
-      doc.addPage();
-    }
-
-    doc.fontSize(13).fillColor('#1E293B').text('Tools & Resources Needed');
-    doc.moveDown(0.5);
-
-    const toolsData = [
-      ['Tool/Resource', 'Purpose', 'Est. Cost', 'Priority'],
-
-      // Critical tools
-      ['WP Rocket or W3 Total Cache', 'Page speed optimization', '$49-99/year', 'Critical'],
-      ['Rank Math or Yoast SEO', 'SEO optimization & schema', 'Free-$59/year', 'Critical'],
-      ['Google Search Console', 'Search performance tracking', 'Free', 'Critical'],
-      ['Google Analytics 4', 'Website analytics', 'Free', 'Critical'],
-
-      // High priority tools
-      ['SEMrush or Ahrefs', 'Keyword research & backlinks', '$99-199/mo', 'High'],
-      ['Hotjar or Microsoft Clarity', 'Heatmaps & session recording', 'Free-$39/mo', 'High'],
-      ['Cloudflare or AWS CloudFront', 'CDN for global performance', 'Free-$20/mo', 'High'],
-      ['Canva Pro', 'Graphics and design', '$12.99/mo', 'High'],
-
-      // Medium priority tools
-      ['Grammarly Business', 'Content quality assurance', '$15/mo', 'Medium'],
-      ['Mailchimp or ConvertKit', 'Email marketing & newsletters', 'Free-$29/mo', 'Medium'],
-      ['VWO or Google Optimize', 'A/B testing platform', 'Free-$199/mo', 'Medium'],
-      ['Loom', 'Video creation and demos', '$12.50/mo', 'Medium'],
-
-      // Low priority tools
-      ['Unbounce or Leadpages', 'Landing page builder', '$49-90/mo', 'Low'],
-      ['OptinMonster or Sumo', 'Exit-intent popups', 'Free-$39/mo', 'Low'],
-      ['CallRail', 'Call tracking', '$45/mo', 'Low']
-    ];
-
-    this.addSimpleTable(doc, toolsData);
-    doc.moveDown(2);
+    doc.moveDown(1);
 
     // Final Note
     doc.rect(50, doc.y, doc.page.width - 100, 120)
