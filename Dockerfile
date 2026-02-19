@@ -43,7 +43,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Generate Prisma client
 COPY prisma ./prisma/
