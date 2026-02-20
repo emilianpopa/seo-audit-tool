@@ -1,8 +1,23 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import puppeteer from 'puppeteer';
 import prisma from '../../config/database.js';
 import logger from '../../config/logger.js';
+
+function findChromiumExecutable() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  try {
+    return execSync(
+      'which chromium || which chromium-browser || which google-chrome-stable || which google-chrome',
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    ).split('\n')[0].trim();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Enhanced SEO Report Generator
@@ -62,12 +77,16 @@ class EnhancedSEOReportGenerator {
     fs.writeFileSync(htmlDebugPath, fullHTML);
     logger.info({ htmlDebugPath }, 'Saved HTML debug file');
 
+    const chromiumPath = findChromiumExecutable();
     const launchOptions = {
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     };
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    if (chromiumPath) {
+      launchOptions.executablePath = chromiumPath;
+      logger.info({ chromiumPath }, 'Using Chromium executable');
+    } else {
+      logger.info('Using Puppeteer bundled Chrome');
     }
     const browser = await puppeteer.launch(launchOptions);
 
