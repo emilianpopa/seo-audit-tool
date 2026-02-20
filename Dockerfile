@@ -25,4 +25,11 @@ RUN mkdir -p reports
 
 EXPOSE 3000
 
+# Copy startup script and make it executable
+COPY start.sh ./
+RUN chmod +x start.sh
+
+# ENTRYPOINT handles migrations with retry (Railway cannot override this).
+# CMD is the default app command; Railway's start command overrides CMD only.
+ENTRYPOINT ["/app/start.sh"]
 CMD ["node", "src/app.js"]
