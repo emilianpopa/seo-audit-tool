@@ -25,5 +25,4 @@ RUN mkdir -p reports
 
 EXPOSE 3000
 
-# Run migrations then start the app
-CMD ["sh", "-c", "npx prisma migrate deploy && node src/app.js"]
+CMD ["node", "src/app.js"]
