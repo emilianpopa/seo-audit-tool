@@ -1,22 +1,49 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import puppeteer from 'puppeteer';
+import puppeteer, { executablePath as puppeteerBundledPath } from 'puppeteer';
 import prisma from '../../config/database.js';
 import logger from '../../config/logger.js';
 
 function findChromiumExecutable() {
+  // 1. Explicit env var (highest priority — set in Railway dashboard)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    logger.info({ path: process.env.PUPPETEER_EXECUTABLE_PATH }, 'Chromium: using PUPPETEER_EXECUTABLE_PATH');
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
+
+  // 2. Path captured during nixpacks build phase (which chromium → /app/.chromium-path)
   try {
-    return execSync(
+    const buildCapturedPath = fs.readFileSync('/app/.chromium-path', 'utf-8').trim();
+    if (buildCapturedPath && fs.existsSync(buildCapturedPath)) {
+      logger.info({ path: buildCapturedPath }, 'Chromium: using build-captured Nix path');
+      return buildCapturedPath;
+    }
+  } catch {}
+
+  // 3. Puppeteer's own bundled Chrome (downloaded during npm install)
+  try {
+    const bundled = puppeteerBundledPath();
+    if (bundled && fs.existsSync(bundled)) {
+      logger.info({ path: bundled }, 'Chromium: using Puppeteer bundled Chrome');
+      return bundled;
+    }
+  } catch {}
+
+  // 4. Runtime which chromium (last resort)
+  try {
+    const found = execSync(
       'which chromium || which chromium-browser || which google-chrome-stable || which google-chrome',
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     ).split('\n')[0].trim();
-  } catch {
-    return null;
-  }
+    if (found) {
+      logger.info({ path: found }, 'Chromium: using runtime which-detected path');
+      return found;
+    }
+  } catch {}
+
+  logger.warn('Chromium: no executable found — puppeteer will use its default');
+  return null;
 }
 
 /**
@@ -80,15 +107,27 @@ class EnhancedSEOReportGenerator {
     const chromiumPath = findChromiumExecutable();
     const launchOptions = {
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--disable-extensions',
+        '--disable-software-rasterizer'
+      ]
     };
     if (chromiumPath) {
       launchOptions.executablePath = chromiumPath;
-      logger.info({ chromiumPath }, 'Using Chromium executable');
-    } else {
-      logger.info('Using Puppeteer bundled Chrome');
     }
-    const browser = await puppeteer.launch(launchOptions);
+
+    let browser;
+    try {
+      browser = await puppeteer.launch(launchOptions);
+    } catch (launchErr) {
+      logger.error({ err: launchErr, chromiumPath, launchOptions }, 'Puppeteer launch failed');
+      throw launchErr;
+    }
 
     const page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });

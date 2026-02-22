@@ -1,7 +1,10 @@
 # Railway Nixpacks Configuration
-# nixPkgs provides real Nix Chromium (tried first via 'which chromium').
-# Puppeteer also downloads its own bundled Chrome during npm install as fallback.
-# Do NOT set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD here — that would block the fallback.
+# nixPkgs installs Nix Chromium (real binary, not an apt snap wrapper).
+# The build phase captures its path to /app/.chromium-path for reliable runtime lookup.
+# Puppeteer also downloads its own bundled Chrome during npm install as a fallback.
 
 [phases.setup]
 nixPkgs = ["chromium"]
+
+[phases.build]
+cmds = ["which chromium > /app/.chromium-path 2>/dev/null || echo '' > /app/.chromium-path"]
