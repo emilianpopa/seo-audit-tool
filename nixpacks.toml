@@ -1,10 +1,32 @@
 # Railway Nixpacks Configuration
-# nixPkgs installs Nix Chromium (real binary, not an apt snap wrapper).
-# The build phase captures its path to /app/.chromium-path for reliable runtime lookup.
-# Puppeteer also downloads its own bundled Chrome during npm install as a fallback.
+#
+# Strategy: aptPkgs installs system libraries that Puppeteer's bundled Chrome needs.
+# We do NOT install the 'chromium' apt package — on Ubuntu 22.04 it is a snap wrapper
+# that does not work in containers.
+# PUPPETEER_CACHE_DIR=/app/.puppeteer-cache ensures Chrome is downloaded into the
+# project directory during npm install, so it survives into the runtime container.
 
 [phases.setup]
-nixPkgs = ["chromium"]
+aptPkgs = [
+  "libnss3",
+  "libnspr4",
+  "libatk1.0-0",
+  "libatk-bridge2.0-0",
+  "libcups2",
+  "libdrm2",
+  "libxkbcommon0",
+  "libxcomposite1",
+  "libxdamage1",
+  "libxfixes3",
+  "libxrandr2",
+  "libgbm1",
+  "libasound2",
+  "libxss1",
+  "libxtst6",
+  "fonts-liberation",
+  "libpango-1.0-0",
+  "libpangocairo-1.0-0"
+]
 
-[phases.build]
-cmds = ["which chromium > /app/.chromium-path 2>/dev/null || echo '' > /app/.chromium-path"]
+[variables]
+PUPPETEER_CACHE_DIR = "/app/.puppeteer-cache"
