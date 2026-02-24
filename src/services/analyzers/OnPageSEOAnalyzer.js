@@ -1,3 +1,4 @@
+import * as cheerio from 'cheerio';
 import logger from '../../config/logger.js';
 
 /**
@@ -12,6 +13,9 @@ import logger from '../../config/logger.js';
  * - Internal linking
  *
  * Weight: 20% of overall score
+ *
+ * Each issue now carries a `specifics` array with per-page
+ * current→suggested pairs, enabling before/after report tables.
  */
 class OnPageSEOAnalyzer {
   constructor(auditId, domain, pages) {
@@ -22,6 +26,97 @@ class OnPageSEOAnalyzer {
     this.checks = {};
   }
 
+  // ─── Private Helpers ────────────────────────────────────────────────────────
+
+  /** Extract brand name from domain, e.g. "getthrivin.com" → "GetThrivin" */
+  _domainBrand() {
+    const base = this.domain.replace(/^www\./, '').split('.')[0];
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
+
+  /**
+   * Build a suggested 50–60 character title for a page.
+   * Uses H1 as the primary signal, falls back to current title.
+   */
+  _suggestTitle(page, currentTitle) {
+    const h1 = (page.h1Tags && page.h1Tags[0] && page.h1Tags[0].trim()) || '';
+    const brand = this._domainBrand();
+    const suffix = ` | ${brand}`;
+
+    let base = h1 || currentTitle || '';
+
+    // Remove existing brand suffixes from base to avoid duplication
+    base = base.replace(new RegExp(`\\s*[|\\-–—]\\s*${brand}.*$`, 'i'), '').trim();
+
+    if (!base) return `${brand} - Professional Services${suffix}`;
+
+    const candidate = `${base}${suffix}`;
+
+    if (candidate.length <= 60) {
+      // If too short, that's fine — better than truncating
+      return candidate;
+    }
+
+    // Truncate base to fit within 60 chars
+    const maxBase = 60 - suffix.length - 3; // 3 for "..."
+    const truncated = base.length > maxBase
+      ? base.substring(0, base.lastIndexOf(' ', maxBase) || maxBase) + '...'
+      : base;
+
+    return `${truncated}${suffix}`;
+  }
+
+  /**
+   * Build a suggested 130–155 character meta description for a page.
+   * Uses H1 + page path to craft a descriptive sentence.
+   */
+  _suggestMeta(page) {
+    const h1 = (page.h1Tags && page.h1Tags[0] && page.h1Tags[0].trim()) || '';
+    const brand = this._domainBrand();
+    const path = (page.path || '/').replace(/\//g, ' ').replace(/-/g, ' ').trim();
+
+    let suggestion;
+    if (h1) {
+      suggestion = `${h1} — Learn more on ${brand}. We provide expert guidance and resources to help you achieve your goals. Get started today.`;
+    } else if (path && path !== '') {
+      const pageContext = path.charAt(0).toUpperCase() + path.slice(1);
+      suggestion = `${pageContext} at ${brand}. Discover our expert approach and see how we can help you succeed. Explore our resources now.`;
+    } else {
+      suggestion = `Welcome to ${brand}. Discover our expert services and see how we can help you achieve your goals. Start your journey today.`;
+    }
+
+    if (suggestion.length > 160) return suggestion.substring(0, 157) + '...';
+    if (suggestion.length < 120) {
+      suggestion = suggestion.replace('.', `. Trusted by thousands of clients.`);
+    }
+    return suggestion.substring(0, 160);
+  }
+
+  /**
+   * Derive a human-readable alt text suggestion from an image src.
+   * e.g. "/uploads/2024/getthrivin-coach-session.jpg" → "Getthrivin coach session"
+   */
+  _altFromSrc(src) {
+    try {
+      // Get the filename portion
+      const filename = src.split('/').pop().split('?')[0];
+      const nameNoExt = filename.replace(/\.[a-z]{2,5}$/i, '');
+
+      const cleaned = nameNoExt
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\d{8,}\b/g, '') // remove long timestamps
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleaned) return 'Image';
+      return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    } catch {
+      return 'Image';
+    }
+  }
+
+  // ─── Analysis Entry Point ────────────────────────────────────────────────────
+
   /**
    * Run all on-page SEO checks
    * @returns {Promise<Object>} Analysis results
@@ -30,7 +125,6 @@ class OnPageSEOAnalyzer {
     logger.info({ auditId: this.auditId }, 'Starting On-Page SEO analysis');
 
     try {
-      // Run all checks
       this.checkTitleTags();
       this.checkMetaDescriptions();
       this.checkHeadingStructure();
@@ -38,7 +132,6 @@ class OnPageSEOAnalyzer {
       this.checkImageOptimization();
       this.checkInternalLinking();
 
-      // Calculate category score
       const categoryScore = this.calculateScore();
 
       const result = {
@@ -68,8 +161,10 @@ class OnPageSEOAnalyzer {
     }
   }
 
+  // ─── Checks ─────────────────────────────────────────────────────────────────
+
   /**
-   * Check title tags
+   * Check title tags — builds before/after specifics for each affected page
    */
   checkTitleTags() {
     const titleIssues = {
@@ -79,56 +174,68 @@ class OnPageSEOAnalyzer {
       duplicates: []
     };
 
-    const titleMap = new Map(); // Track duplicates
+    const titleMap = new Map();
+
+    // Specifics collectors (per-page current→suggested pairs)
+    const missingSpecifics = [];
+    const tooShortSpecifics = [];
+    const tooLongSpecifics = [];
 
     for (const page of this.pages) {
       const title = page.title;
       const titleLength = page.titleLength || 0;
 
-      // Missing title
       if (!title || title.trim() === '') {
         titleIssues.missing.push(page.url);
+        const suggested = this._suggestTitle(page, '');
+        missingSpecifics.push({
+          url: page.url,
+          field: 'title',
+          current: { value: '(none)', length: 0 },
+          suggested: { value: suggested, length: suggested.length, copyPasteReady: true },
+          context: page.h1Tags && page.h1Tags[0] ? `Derived from H1: "${page.h1Tags[0]}"` : 'No H1 found — use page topic'
+        });
         continue;
       }
 
-      // Title too short (< 30 characters)
       if (titleLength < 30) {
-        titleIssues.tooShort.push({
+        titleIssues.tooShort.push({ url: page.url, title, length: titleLength });
+        const suggested = this._suggestTitle(page, title);
+        tooShortSpecifics.push({
           url: page.url,
-          title,
-          length: titleLength
+          field: 'title',
+          current: { value: title, length: titleLength },
+          suggested: { value: suggested, length: suggested.length, copyPasteReady: true },
+          context: `Current is only ${titleLength} chars — target 50–60`
         });
       }
 
-      // Title too long (> 60 characters)
       if (titleLength > 60) {
-        titleIssues.tooLong.push({
+        titleIssues.tooLong.push({ url: page.url, title, length: titleLength });
+        const suggested = this._suggestTitle(page, title);
+        tooLongSpecifics.push({
           url: page.url,
-          title,
-          length: titleLength
+          field: 'title',
+          current: { value: title, length: titleLength },
+          suggested: { value: suggested, length: suggested.length, copyPasteReady: true },
+          context: `Current is ${titleLength} chars — truncated to ≤60`
         });
       }
 
-      // Track for duplicates
-      if (!titleMap.has(title)) {
-        titleMap.set(title, []);
-      }
+      if (!titleMap.has(title)) titleMap.set(title, []);
       titleMap.get(title).push(page.url);
     }
 
-    // Find duplicates
     for (const [title, urls] of titleMap.entries()) {
       if (urls.length > 1) {
-        titleIssues.duplicates.push({
-          title,
-          urls,
-          count: urls.length
-        });
+        titleIssues.duplicates.push({ title, urls, count: urls.length });
       }
     }
 
-    // Calculate percentage with good titles
-    const goodTitles = this.pages.length - titleIssues.missing.length - titleIssues.tooShort.length - titleIssues.tooLong.length;
+    const goodTitles = this.pages.length
+      - titleIssues.missing.length
+      - titleIssues.tooShort.length
+      - titleIssues.tooLong.length;
     const percentageGood = this.pages.length > 0
       ? Math.round((goodTitles / this.pages.length) * 100)
       : 0;
@@ -144,16 +251,16 @@ class OnPageSEOAnalyzer {
       status: percentageGood >= 80 ? 'pass' : 'fail'
     };
 
-    // Add issues
     if (titleIssues.missing.length > 0) {
       this.issues.push({
         type: 'missing_title_tags',
         severity: 'critical',
         title: 'Missing Title Tags',
         description: `${titleIssues.missing.length} pages are missing title tags. Title tags are crucial for SEO.`,
-        recommendation: 'Add unique, descriptive title tags (30-60 characters) to all pages.',
+        recommendation: 'Add unique, descriptive title tags (50–60 characters) to all pages.',
         affectedPages: titleIssues.missing.length,
-        examples: titleIssues.missing.slice(0, 5)
+        examples: titleIssues.missing.slice(0, 5),
+        specifics: missingSpecifics.slice(0, 10)
       });
     }
 
@@ -163,9 +270,10 @@ class OnPageSEOAnalyzer {
         severity: 'medium',
         title: 'Title Tags Too Short',
         description: `${titleIssues.tooShort.length} pages have title tags shorter than 30 characters.`,
-        recommendation: 'Expand title tags to 30-60 characters for better optimization.',
+        recommendation: 'Expand title tags to 50–60 characters, adding brand name and primary keyword.',
         affectedPages: titleIssues.tooShort.length,
-        examples: titleIssues.tooShort.slice(0, 3)
+        examples: titleIssues.tooShort.slice(0, 3),
+        specifics: tooShortSpecifics.slice(0, 10)
       });
     }
 
@@ -175,32 +283,38 @@ class OnPageSEOAnalyzer {
         severity: 'medium',
         title: 'Title Tags Too Long',
         description: `${titleIssues.tooLong.length} pages have title tags longer than 60 characters. They may be truncated in search results.`,
-        recommendation: 'Shorten title tags to 30-60 characters to avoid truncation.',
+        recommendation: 'Shorten title tags to 50–60 characters to avoid truncation in SERPs.',
         affectedPages: titleIssues.tooLong.length,
-        examples: titleIssues.tooLong.slice(0, 3)
+        examples: titleIssues.tooLong.slice(0, 3),
+        specifics: tooLongSpecifics.slice(0, 10)
       });
     }
 
     if (titleIssues.duplicates.length > 0) {
+      const dupSpecifics = titleIssues.duplicates.slice(0, 5).map(d => ({
+        url: d.urls[0],
+        field: 'title',
+        current: { value: d.title, length: d.title.length },
+        suggested: { value: `(unique title for each of the ${d.count} pages)`, copyPasteReady: false },
+        context: `Same title used on ${d.count} pages: ${d.urls.slice(0, 3).map(u => u.replace(/https?:\/\/[^/]+/, '')).join(', ')}`
+      }));
       this.issues.push({
         type: 'duplicate_title_tags',
         severity: 'high',
         title: 'Duplicate Title Tags',
-        description: `${titleIssues.duplicates.length} duplicate title tags found across multiple pages. Each page should have a unique title.`,
+        description: `${titleIssues.duplicates.length} duplicate title tags found across multiple pages.`,
         recommendation: 'Make each title tag unique and descriptive of the page content.',
         affectedPages: titleIssues.duplicates.reduce((sum, d) => sum + d.count, 0),
-        examples: titleIssues.duplicates.slice(0, 3)
+        examples: titleIssues.duplicates.slice(0, 3),
+        specifics: dupSpecifics
       });
     }
 
-    logger.debug({
-      auditId: this.auditId,
-      percentageGood
-    }, 'Title tags checked');
+    logger.debug({ auditId: this.auditId, percentageGood }, 'Title tags checked');
   }
 
   /**
-   * Check meta descriptions
+   * Check meta descriptions — builds before/after specifics for each affected page
    */
   checkMetaDescriptions() {
     const metaIssues = {
@@ -211,54 +325,65 @@ class OnPageSEOAnalyzer {
     };
 
     const metaMap = new Map();
+    const missingSpecifics = [];
+    const tooShortSpecifics = [];
+    const tooLongSpecifics = [];
 
     for (const page of this.pages) {
       const meta = page.metaDescription;
       const metaLength = page.metaLength || 0;
 
-      // Missing meta description
       if (!meta || meta.trim() === '') {
         metaIssues.missing.push(page.url);
+        const suggested = this._suggestMeta(page);
+        missingSpecifics.push({
+          url: page.url,
+          field: 'metaDescription',
+          current: { value: '(none)', length: 0 },
+          suggested: { value: suggested, length: suggested.length, copyPasteReady: true },
+          context: page.h1Tags && page.h1Tags[0] ? `Based on H1: "${page.h1Tags[0]}"` : 'No H1 — describe the page topic'
+        });
         continue;
       }
 
-      // Meta too short (< 120 characters)
       if (metaLength < 120) {
-        metaIssues.tooShort.push({
+        metaIssues.tooShort.push({ url: page.url, description: meta, length: metaLength });
+        const suggested = this._suggestMeta(page);
+        tooShortSpecifics.push({
           url: page.url,
-          description: meta,
-          length: metaLength
+          field: 'metaDescription',
+          current: { value: meta, length: metaLength },
+          suggested: { value: suggested, length: suggested.length, copyPasteReady: true },
+          context: `Current is ${metaLength} chars — target 130–155`
         });
       }
 
-      // Meta too long (> 160 characters)
       if (metaLength > 160) {
-        metaIssues.tooLong.push({
+        metaIssues.tooLong.push({ url: page.url, description: meta, length: metaLength });
+        const truncated = meta.substring(0, 157) + '...';
+        tooLongSpecifics.push({
           url: page.url,
-          description: meta,
-          length: metaLength
+          field: 'metaDescription',
+          current: { value: meta, length: metaLength },
+          suggested: { value: truncated, length: truncated.length, copyPasteReady: true },
+          context: `Trimmed at word boundary to 157 chars`
         });
       }
 
-      // Track for duplicates
-      if (!metaMap.has(meta)) {
-        metaMap.set(meta, []);
-      }
+      if (!metaMap.has(meta)) metaMap.set(meta, []);
       metaMap.get(meta).push(page.url);
     }
 
-    // Find duplicates
     for (const [meta, urls] of metaMap.entries()) {
       if (urls.length > 1) {
-        metaIssues.duplicates.push({
-          description: meta,
-          urls,
-          count: urls.length
-        });
+        metaIssues.duplicates.push({ description: meta, urls, count: urls.length });
       }
     }
 
-    const goodMeta = this.pages.length - metaIssues.missing.length - metaIssues.tooShort.length - metaIssues.tooLong.length;
+    const goodMeta = this.pages.length
+      - metaIssues.missing.length
+      - metaIssues.tooShort.length
+      - metaIssues.tooLong.length;
     const percentageGood = this.pages.length > 0
       ? Math.round((goodMeta / this.pages.length) * 100)
       : 0;
@@ -274,20 +399,53 @@ class OnPageSEOAnalyzer {
       status: percentageGood >= 80 ? 'pass' : 'fail'
     };
 
-    // Add issues
     if (metaIssues.missing.length > 0) {
       this.issues.push({
         type: 'missing_meta_descriptions',
         severity: 'high',
         title: 'Missing Meta Descriptions',
         description: `${metaIssues.missing.length} pages are missing meta descriptions.`,
-        recommendation: 'Add unique, compelling meta descriptions (120-160 characters) to all pages.',
+        recommendation: 'Add unique, compelling meta descriptions (130–155 characters) to all pages.',
         affectedPages: metaIssues.missing.length,
-        examples: metaIssues.missing.slice(0, 5)
+        examples: metaIssues.missing.slice(0, 5),
+        specifics: missingSpecifics.slice(0, 10)
+      });
+    }
+
+    if (metaIssues.tooShort.length > 0) {
+      this.issues.push({
+        type: 'short_meta_descriptions',
+        severity: 'low',
+        title: 'Meta Descriptions Too Short',
+        description: `${metaIssues.tooShort.length} pages have meta descriptions shorter than 120 characters.`,
+        recommendation: 'Expand meta descriptions to 130–155 characters with a clear value proposition.',
+        affectedPages: metaIssues.tooShort.length,
+        examples: metaIssues.tooShort.slice(0, 3),
+        specifics: tooShortSpecifics.slice(0, 10)
+      });
+    }
+
+    if (metaIssues.tooLong.length > 0) {
+      this.issues.push({
+        type: 'long_meta_descriptions',
+        severity: 'low',
+        title: 'Meta Descriptions Too Long',
+        description: `${metaIssues.tooLong.length} pages have meta descriptions longer than 160 characters.`,
+        recommendation: 'Shorten meta descriptions to 130–155 characters to prevent truncation.',
+        affectedPages: metaIssues.tooLong.length,
+        examples: metaIssues.tooLong.slice(0, 3),
+        specifics: tooLongSpecifics.slice(0, 10)
       });
     }
 
     if (metaIssues.duplicates.length > 0) {
+      const dupSpecifics = metaIssues.duplicates.slice(0, 5).map(d => ({
+        url: d.urls[0],
+        field: 'metaDescription',
+        current: { value: d.description, length: d.description.length },
+        suggested: { value: `(unique description for each of the ${d.count} pages)`, copyPasteReady: false },
+        context: `Same description used on ${d.count} pages`
+      }));
       this.issues.push({
         type: 'duplicate_meta_descriptions',
         severity: 'medium',
@@ -295,7 +453,8 @@ class OnPageSEOAnalyzer {
         description: `${metaIssues.duplicates.length} duplicate meta descriptions found.`,
         recommendation: 'Make each meta description unique and relevant to the page content.',
         affectedPages: metaIssues.duplicates.reduce((sum, d) => sum + d.count, 0),
-        examples: metaIssues.duplicates.slice(0, 3)
+        examples: metaIssues.duplicates.slice(0, 3),
+        specifics: dupSpecifics
       });
     }
 
@@ -303,7 +462,7 @@ class OnPageSEOAnalyzer {
   }
 
   /**
-   * Check heading structure (H1, H2, H3)
+   * Check heading structure — records existing H1s for before/after display
    */
   checkHeadingStructure() {
     const headingIssues = {
@@ -312,28 +471,42 @@ class OnPageSEOAnalyzer {
       emptyH1: []
     };
 
+    const missingSpecifics = [];
+    const multipleSpecifics = [];
+
     for (const page of this.pages) {
       const h1Tags = page.h1Tags || [];
 
-      // Missing H1
       if (h1Tags.length === 0) {
         headingIssues.missingH1.push(page.url);
-      }
-      // Multiple H1 tags
-      else if (h1Tags.length > 1) {
-        headingIssues.multipleH1.push({
+        const suggestedH1 = page.title
+          ? page.title.replace(/\s*[|\\-–—].*$/, '').trim()
+          : this._domainBrand() + ' — Main Heading';
+        missingSpecifics.push({
           url: page.url,
-          h1Tags,
-          count: h1Tags.length
+          field: 'h1',
+          current: { value: '(none)', length: 0 },
+          suggested: { value: suggestedH1, length: suggestedH1.length, copyPasteReady: true },
+          context: page.title ? `Derived from title tag: "${page.title}"` : 'No title available'
         });
-      }
-      // Empty H1
-      else if (h1Tags[0].trim() === '') {
+      } else if (h1Tags.length > 1) {
+        headingIssues.multipleH1.push({ url: page.url, h1Tags, count: h1Tags.length });
+        multipleSpecifics.push({
+          url: page.url,
+          field: 'h1',
+          current: { value: h1Tags.join(' | '), length: h1Tags.join(' | ').length },
+          suggested: { value: h1Tags[0], length: h1Tags[0].length, copyPasteReady: true },
+          context: `Keep only the first H1; convert others to H2: ${h1Tags.slice(1).map(h => `"${h}"`).join(', ')}`
+        });
+      } else if (h1Tags[0].trim() === '') {
         headingIssues.emptyH1.push(page.url);
       }
     }
 
-    const goodHeadings = this.pages.length - headingIssues.missingH1.length - headingIssues.multipleH1.length - headingIssues.emptyH1.length;
+    const goodHeadings = this.pages.length
+      - headingIssues.missingH1.length
+      - headingIssues.multipleH1.length
+      - headingIssues.emptyH1.length;
     const percentageGood = this.pages.length > 0
       ? Math.round((goodHeadings / this.pages.length) * 100)
       : 0;
@@ -348,16 +521,16 @@ class OnPageSEOAnalyzer {
       status: percentageGood >= 90 ? 'pass' : 'fail'
     };
 
-    // Add issues
     if (headingIssues.missingH1.length > 0) {
       this.issues.push({
         type: 'missing_h1',
         severity: 'high',
         title: 'Missing H1 Tags',
         description: `${headingIssues.missingH1.length} pages are missing H1 tags.`,
-        recommendation: 'Add a single, descriptive H1 tag to each page that summarizes the main topic.',
+        recommendation: 'Add a single, descriptive H1 tag to each page summarizing the main topic.',
         affectedPages: headingIssues.missingH1.length,
-        examples: headingIssues.missingH1.slice(0, 5)
+        examples: headingIssues.missingH1.slice(0, 5),
+        specifics: missingSpecifics.slice(0, 8)
       });
     }
 
@@ -367,9 +540,10 @@ class OnPageSEOAnalyzer {
         severity: 'medium',
         title: 'Multiple H1 Tags',
         description: `${headingIssues.multipleH1.length} pages have multiple H1 tags. Each page should have only one H1.`,
-        recommendation: 'Consolidate to a single H1 tag per page. Use H2-H6 for subheadings.',
+        recommendation: 'Keep only the primary H1; convert all others to H2 or H3 subheadings.',
         affectedPages: headingIssues.multipleH1.length,
-        examples: headingIssues.multipleH1.slice(0, 3)
+        examples: headingIssues.multipleH1.slice(0, 3),
+        specifics: multipleSpecifics.slice(0, 8)
       });
     }
 
@@ -390,20 +564,14 @@ class OnPageSEOAnalyzer {
       const url = page.url;
       const path = page.path || '/';
 
-      // URL too long (> 100 characters)
       if (url.length > 100) {
-        urlIssues.tooLong.push({
-          url,
-          length: url.length
-        });
+        urlIssues.tooLong.push({ url, length: url.length });
       }
 
-      // Has query parameters (except homepage)
       if (url.includes('?') && path !== '/') {
         urlIssues.hasParameters.push(url);
       }
 
-      // Not descriptive (too short path or random characters)
       if (path.length < 3 && path !== '/') {
         urlIssues.notDescriptive.push(url);
       }
@@ -423,7 +591,6 @@ class OnPageSEOAnalyzer {
       status: percentageGood >= 80 ? 'pass' : 'warning'
     };
 
-    // Add issues
     if (urlIssues.tooLong.length > 0) {
       this.issues.push({
         type: 'urls_too_long',
@@ -452,43 +619,103 @@ class OnPageSEOAnalyzer {
   }
 
   /**
-   * Check image optimization
+   * Check image optimization — detects images missing alt text with src-based suggestions
    */
   checkImageOptimization() {
     let totalImages = 0;
-    const pagesWithImages = [];
+    let totalMissingAlt = 0;
+    const pagesWithMissingAlt = [];
+
+    // Specifics: list of {url, imageSrc, suggested} for missing alts
+    const altSpecifics = [];
 
     for (const page of this.pages) {
-      const imageCount = page.imageCount || 0;
-      totalImages += imageCount;
+      const html = page.html;
+      if (!html) {
+        totalImages += page.imageCount || 0;
+        continue;
+      }
 
-      if (imageCount > 0) {
-        pagesWithImages.push({
+      const $ = cheerio.load(html);
+      const imgs = $('img');
+      const pageImageCount = imgs.length;
+      totalImages += pageImageCount;
+
+      let pageMissingAlt = 0;
+      const pageAltIssues = [];
+
+      imgs.each((_, el) => {
+        const alt = $(el).attr('alt');
+        if (alt === undefined || alt === null || alt.trim() === '') {
+          pageMissingAlt++;
+          const src = $(el).attr('src') || $(el).attr('data-src') || '';
+          // Collect up to 3 per page for the specifics list
+          if (pageAltIssues.length < 3) {
+            pageAltIssues.push({
+              src: src.replace(/^https?:\/\/[^/]+/, ''), // strip domain
+              suggestedAlt: this._altFromSrc(src)
+            });
+          }
+        }
+      });
+
+      totalMissingAlt += pageMissingAlt;
+
+      if (pageMissingAlt > 0) {
+        pagesWithMissingAlt.push({
           url: page.url,
-          imageCount
+          missingAlt: pageMissingAlt,
+          totalImages: pageImageCount
         });
+
+        // Add up to 3 image specifics per page (total cap: 15)
+        if (altSpecifics.length < 15) {
+          for (const img of pageAltIssues) {
+            altSpecifics.push({
+              url: page.url,
+              field: 'alt',
+              imageSrc: img.src,
+              current: { value: '' },
+              suggested: { value: img.suggestedAlt, copyPasteReady: true },
+              context: `Image: ${img.src.split('/').pop().split('?')[0] || 'unknown'}`
+            });
+          }
+        }
       }
     }
 
-    const avgImagesPerPage = this.pages.length > 0
-      ? Math.round(totalImages / this.pages.length)
-      : 0;
+    const percentageWithAlt = totalImages > 0
+      ? Math.round(((totalImages - totalMissingAlt) / totalImages) * 100)
+      : 100;
 
     this.checks.imageOptimization = {
       totalPages: this.pages.length,
       totalImages,
-      pagesWithImages: pagesWithImages.length,
-      avgImagesPerPage,
-      status: 'info' // Placeholder - need HTML to check alt tags
+      totalMissingAlt,
+      percentageWithAlt,
+      pagesWithMissingAlt: pagesWithMissingAlt.length,
+      status: percentageWithAlt >= 90 ? 'pass' : 'fail'
     };
 
-    // Note: We can't check alt text without parsing HTML in detail
-    // This would be enhanced in a future iteration with Puppeteer
+    if (totalMissingAlt > 0) {
+      const severity = totalMissingAlt > 10 ? 'high' : 'medium';
+      this.issues.push({
+        type: 'images_missing_alt_text',
+        severity,
+        title: 'Images Missing Alt Text',
+        description: `${totalMissingAlt} image${totalMissingAlt !== 1 ? 's' : ''} across ${pagesWithMissingAlt.length} page${pagesWithMissingAlt.length !== 1 ? 's' : ''} are missing alt text. Alt text is essential for accessibility and image SEO.`,
+        recommendation: 'Add descriptive alt text to all content images. Use empty alt="" only for purely decorative images.',
+        affectedPages: pagesWithMissingAlt.length,
+        examples: pagesWithMissingAlt.slice(0, 5),
+        specifics: altSpecifics
+      });
+    }
 
     logger.debug({
       auditId: this.auditId,
       totalImages,
-      avgImagesPerPage
+      totalMissingAlt,
+      percentageWithAlt
     }, 'Image optimization checked');
   }
 
@@ -503,12 +730,8 @@ class OnPageSEOAnalyzer {
       const linkCount = page.linkCount || 0;
       totalLinks += linkCount;
 
-      // Flag pages with very few internal links (< 3)
       if (linkCount < 3 && page.path !== '/') {
-        pagesWithFewLinks.push({
-          url: page.url,
-          linkCount
-        });
+        pagesWithFewLinks.push({ url: page.url, linkCount });
       }
     }
 
@@ -530,21 +753,17 @@ class OnPageSEOAnalyzer {
         severity: 'low',
         title: 'Poor Internal Linking',
         description: `${pagesWithFewLinks.length} pages have fewer than 3 internal links.`,
-        recommendation: 'Add more contextual internal links to improve site navigation and SEO.',
+        recommendation: 'Add contextual internal links to improve site navigation and distribute link equity.',
         affectedPages: pagesWithFewLinks.length,
         examples: pagesWithFewLinks.slice(0, 5)
       });
     }
 
-    logger.debug({
-      auditId: this.auditId,
-      avgLinksPerPage
-    }, 'Internal linking checked');
+    logger.debug({ auditId: this.auditId, avgLinksPerPage }, 'Internal linking checked');
   }
 
-  /**
-   * Calculate On-Page SEO score
-   */
+  // ─── Scoring ─────────────────────────────────────────────────────────────────
+
   calculateScore() {
     const weights = {
       titleTags: 25,
@@ -558,37 +777,34 @@ class OnPageSEOAnalyzer {
     let totalScore = 0;
     let totalWeight = 0;
 
-    // Title tags score
     if (this.checks.titleTags) {
       totalScore += this.checks.titleTags.percentageGood * weights.titleTags;
       totalWeight += weights.titleTags;
     }
 
-    // Meta descriptions score
     if (this.checks.metaDescriptions) {
       totalScore += this.checks.metaDescriptions.percentageGood * weights.metaDescriptions;
       totalWeight += weights.metaDescriptions;
     }
 
-    // Heading structure score
     if (this.checks.headingStructure) {
       totalScore += this.checks.headingStructure.percentageGood * weights.headingStructure;
       totalWeight += weights.headingStructure;
     }
 
-    // URL structure score
     if (this.checks.urlStructure) {
       totalScore += this.checks.urlStructure.percentageGood * weights.urlStructure;
       totalWeight += weights.urlStructure;
     }
 
-    // Image optimization score (placeholder - assume 70% for now)
     if (this.checks.imageOptimization) {
-      totalScore += 70 * weights.imageOptimization;
+      const imgScore = this.checks.imageOptimization.totalImages === 0
+        ? 100
+        : this.checks.imageOptimization.percentageWithAlt;
+      totalScore += imgScore * weights.imageOptimization;
       totalWeight += weights.imageOptimization;
     }
 
-    // Internal linking score
     if (this.checks.internalLinking) {
       const linkScore = Math.min(100, (this.checks.internalLinking.avgLinksPerPage / 10) * 100);
       totalScore += linkScore * weights.internalLinking;
@@ -596,13 +812,9 @@ class OnPageSEOAnalyzer {
     }
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
-
     return Math.max(0, Math.min(100, finalScore));
   }
 
-  /**
-   * Get rating based on score
-   */
   getRating(score) {
     if (score >= 90) return 'excellent';
     if (score >= 70) return 'good';

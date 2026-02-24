@@ -123,24 +123,27 @@ class EnhancedSEOReportGenerator {
 
     let browser;
     try {
-      browser = await puppeteer.launch(launchOptions);
+      browser = await puppeteer.launch({ ...launchOptions, timeout: 60000 });
     } catch (launchErr) {
       logger.error({ err: launchErr, chromiumPath, launchOptions }, 'Puppeteer launch failed');
       throw launchErr;
     }
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
-    await page.setContent(fullHTML, { waitUntil: 'networkidle0' });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
+      await page.setContent(fullHTML, { waitUntil: 'networkidle0', timeout: 30000 });
 
-    await page.pdf({
-      path: filepath,
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '15mm', right: '12mm', bottom: '15mm', left: '12mm' }
-    });
-
-    await browser.close();
+      await page.pdf({
+        path: filepath,
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '15mm', right: '12mm', bottom: '15mm', left: '12mm' },
+        timeout: 60000
+      });
+    } finally {
+      await browser.close();
+    }
 
     logger.info({ auditId: this.auditId, filepath }, 'Enhanced PDF report generated successfully');
     return filepath;

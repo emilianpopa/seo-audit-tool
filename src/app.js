@@ -11,6 +11,7 @@ import { apiLimiter } from './middleware/rateLimiter.js';
 import auditRoutes from './api/routes/audit.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
 import reportRoutes from './api/routes/report.routes.js';
+import integrationRoutes from './api/routes/integrations.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,6 +62,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use('/api/health', healthRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/report', reportRoutes);
+app.use('/api/integrations', integrationRoutes);
 
 // ============================================================================
 // ERROR HANDLING

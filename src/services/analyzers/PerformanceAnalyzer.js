@@ -361,15 +361,17 @@ class PerformanceAnalyzer {
       status: avgLoadTime < 2000 ? 'pass' : 'fail'
     };
 
-    // Estimate score based on load time (more conservative scoring)
-    let estimatedScore = 50; // Start at 50, not 100
-    if (avgLoadTime < 1000) estimatedScore += 30; // Fast sites get bonus
-    if (avgLoadTime < 500) estimatedScore += 20; // Very fast sites get more
-    if (avgLoadTime > 2000) estimatedScore -= 20;
-    if (avgLoadTime > 3000) estimatedScore -= 15;
-    if (avgLoadTime > 5000) estimatedScore -= 15;
+    // Estimate score based on HTTP response time only (not full browser render).
+    // loadTime measures TTFB+transfer — real LCP is typically 3-10x higher.
+    // Cap at 65 so we never report an inflated score without real PageSpeed data.
+    let estimatedScore = 45; // Start conservative
+    if (avgLoadTime < 800) estimatedScore += 15;
+    if (avgLoadTime < 400) estimatedScore += 5;
+    if (avgLoadTime > 2000) estimatedScore -= 10;
+    if (avgLoadTime > 3000) estimatedScore -= 10;
+    if (avgLoadTime > 5000) estimatedScore -= 10;
 
-    this.checks.estimatedScore = Math.max(0, Math.min(100, estimatedScore));
+    this.checks.estimatedScore = Math.max(0, Math.min(65, estimatedScore));
 
     logger.debug({
       auditId: this.auditId,
@@ -386,7 +388,7 @@ class PerformanceAnalyzer {
 
     const avgLoadTime = this.checks.loadTimes?.avgLoadTime || 0;
     const pagesWithLoadTime = this.checks.loadTimes?.pagesAnalyzed || 0;
-    const estimatedScore = this.checks.estimatedScore || 50; // Default to 50 if no data, never 0
+    const estimatedScore = this.checks.estimatedScore || 45;
 
     if (avgLoadTime > 3000) {
       this.issues.push({
@@ -416,8 +418,8 @@ class PerformanceAnalyzer {
       }]
     });
 
-    // Ensure score is never 0 - minimum of 30 for fallback
-    const finalScore = Math.max(30, estimatedScore);
+    // estimatedScore is already capped at 65 in calculateLoadTimeEstimation()
+    const finalScore = Math.max(20, estimatedScore);
 
     return {
       category: 'PERFORMANCE',
@@ -477,9 +479,9 @@ class PerformanceAnalyzer {
       }
     }
 
-    // Fall back to load-time estimation
-    const estimatedScore = this.checks.estimatedScore || 50; // Default to 50 if no data
-    const finalScore = Math.max(30, estimatedScore); // Never return less than 30
+    // Fall back to load-time estimation (capped at 65 — TTFB only, not real render time)
+    const estimatedScore = this.checks.estimatedScore || 45;
+    const finalScore = Math.max(20, estimatedScore);
 
     logger.debug({
       auditId: this.auditId,

@@ -1,4 +1,5 @@
 import express from 'express';
+import { z } from 'zod';
 import { isValidUrl, normalizeUrl, extractDomain } from '../../utils/urlUtils.js';
 import {
   successResponse,
@@ -13,6 +14,14 @@ import logger from '../../config/logger.js';
 import { queueAudit } from '../../config/queue.js';
 import { auditCreationLimiter } from '../../middleware/rateLimiter.js';
 
+const startAuditSchema = z.object({
+  targetUrl: z.string().min(1, 'Target URL is required'),
+  config: z.object({
+    maxPages: z.number().int().min(1).max(200).optional(),
+    crawlDepth: z.number().int().min(1).max(10).optional()
+  }).optional().default({})
+});
+
 const router = express.Router();
 
 /**
@@ -21,14 +30,13 @@ const router = express.Router();
  */
 router.post('/start', auditCreationLimiter, async (req, res) => {
   try {
-    const { targetUrl, config = {} } = req.body;
-
-    // Validation
-    if (!targetUrl) {
-      return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
-        validationErrorResponse([{ field: 'targetUrl', message: 'Target URL is required' }])
-      );
+    const parsed = startAuditSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message }));
+      return res.status(HTTP_STATUS.VALIDATION_ERROR).json(validationErrorResponse(errors));
     }
+
+    const { targetUrl, config } = parsed.data;
 
     if (!isValidUrl(targetUrl)) {
       return res.status(HTTP_STATUS.VALIDATION_ERROR).json(
@@ -60,7 +68,7 @@ router.post('/start', auditCreationLimiter, async (req, res) => {
         auditId: audit.id,
         status: audit.status,
         targetUrl: audit.targetUrl,
-        estimatedTime: '5-10 minutes',
+        estimatedTime: '1-3 minutes',
         createdAt: audit.createdAt
       }, 'Audit queued successfully')
     );
@@ -182,6 +190,9 @@ router.get('/:id/report', async (req, res) => {
       longTerm: audit.recommendations.filter(r => r.phase === 'long-term')
     };
 
+    // Extract CMS detection from metadata
+    const cmsDetection = audit.metadata?.cmsDetection || null;
+
     const response = {
       auditId: audit.id,
       targetUrl: audit.targetUrl,
@@ -189,6 +200,7 @@ router.get('/:id/report', async (req, res) => {
       overallScore: audit.overallScore,
       scoreRating: audit.scoreRating,
       completedAt: audit.completedAt,
+      cmsDetection,
       categoryScores,
       recommendations: audit.recommendations.map(r => ({
         priority: r.priority,

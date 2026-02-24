@@ -149,33 +149,121 @@ class ProfessionalSEOReportGenerator {
 
     let browser;
     try {
-      browser = await puppeteer.launch(launchOptions);
+      browser = await puppeteer.launch({ ...launchOptions, timeout: 60000 });
     } catch (launchErr) {
       logger.error({ err: launchErr, chromiumPath, launchOptions }, 'Puppeteer launch failed');
       throw launchErr;
     }
 
-    const page = await browser.newPage();
-    // Set viewport to A4 width for consistent rendering
-    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
-    await page.setContent(fullHTML, { waitUntil: 'networkidle0' });
+    try {
+      const page = await browser.newPage();
+      // Set viewport to A4 width for consistent rendering
+      await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
+      await page.setContent(fullHTML, { waitUntil: 'networkidle0', timeout: 30000 });
 
-    await page.pdf({
-      path: filepath,
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '15mm',
-        right: '12mm',
-        bottom: '15mm',
-        left: '12mm'
-      }
-    });
-
-    await browser.close();
+      await page.pdf({
+        path: filepath,
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '15mm',
+          right: '12mm',
+          bottom: '15mm',
+          left: '12mm'
+        },
+        timeout: 60000
+      });
+    } finally {
+      await browser.close();
+    }
 
     logger.info({ auditId: this.auditId, filepath }, 'Professional PDF report generated successfully');
     return filepath;
+  }
+
+  /**
+   * Build a Map<issueTitle → specifics[]> from all raw analyzer results.
+   * Specifics are stored in the SeoAuditResult.issues JSON column.
+   */
+  buildSpecificsMap() {
+    const map = new Map();
+    for (const result of this.audit.results) {
+      const issues = Array.isArray(result.issues) ? result.issues : [];
+      for (const issue of issues) {
+        if (issue.specifics && issue.specifics.length > 0) {
+          map.set(issue.title, issue.specifics);
+        }
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Render a before/after comparison table for an issue's specifics.
+   * Returns empty string if no specifics.
+   */
+  buildBeforeAfterTable(specifics, maxRows = 6) {
+    if (!specifics || specifics.length === 0) return '';
+
+    const rows = specifics.slice(0, maxRows);
+    const isImageIssue = rows[0].field === 'alt' || rows[0].imageSrc != null;
+
+    let html = '<div class="before-after-table">\n';
+
+    if (isImageIssue) {
+      html += `
+<table class="specifics-table">
+  <thead>
+    <tr>
+      <th>Page</th>
+      <th>Image</th>
+      <th class="suggested-col">Suggested Alt Text</th>
+    </tr>
+  </thead>
+  <tbody>
+`;
+      for (const r of rows) {
+        const pageUrl = (r.url || '').replace(/https?:\/\/[^/]+/, '') || '/';
+        const imgSrc = (r.imageSrc || '').split('/').pop().split('?')[0];
+        const alt = this.escapeHTML(r.suggested?.value || '');
+        html += `    <tr>
+      <td class="url-cell">${this.escapeHTML(this.truncate(pageUrl, 35))}</td>
+      <td class="url-cell text-gray">${this.escapeHTML(this.truncate(imgSrc, 30))}</td>
+      <td class="suggested-value">${alt}</td>
+    </tr>\n`;
+      }
+    } else {
+      html += `
+<table class="specifics-table">
+  <thead>
+    <tr>
+      <th>Page</th>
+      <th class="current-col">Current</th>
+      <th class="suggested-col">Suggested (copy-paste ready)</th>
+    </tr>
+  </thead>
+  <tbody>
+`;
+      for (const r of rows) {
+        const pageUrl = (r.url || '').replace(/https?:\/\/[^/]+/, '') || '/';
+        const curVal = this.escapeHTML(this.truncate(r.current?.value || '(empty)', 70));
+        const curLen = r.current?.length ? ` <span class="length-badge">${r.current.length}ch</span>` : '';
+        const sugVal = this.escapeHTML(this.truncate(r.suggested?.value || '', 70));
+        const sugLen = r.suggested?.length ? ` <span class="length-badge good">${r.suggested.length}ch</span>` : '';
+        html += `    <tr>
+      <td class="url-cell">${this.escapeHTML(this.truncate(pageUrl, 35))}</td>
+      <td class="current-value">${curVal}${curLen}</td>
+      <td class="suggested-value">${sugVal}${sugLen}</td>
+    </tr>\n`;
+      }
+    }
+
+    html += '  </tbody>\n</table>\n';
+    if (specifics.length > maxRows) {
+      html += `<div class="more-rows">...and ${specifics.length - maxRows} more pages not shown</div>\n`;
+    }
+    html += '</div>\n';
+    return html;
   }
 
   /**
@@ -326,15 +414,14 @@ class ProfessionalSEOReportGenerator {
   }
 
   /**
-   * Build findings by category with evidence
+   * Build findings by category with evidence and before/after tables
    */
   buildFindingsByCategory() {
     let html = '<h1>2. Detailed Findings</h1>\n';
-    html += '<p>Each issue includes <strong>specific evidence</strong> from the crawl, showing exactly which pages are affected and what was detected.</p>\n\n';
+    html += '<p>Each issue includes <strong>specific before/after details</strong> showing exactly what to change on each affected page.</p>\n\n';
 
-    // Select only the most impactful issues (12-15 total)
     const selectedIssues = this.selectIssuesForReport(this.audit.recommendations);
-    const selectedIds = new Set(selectedIssues.map(i => i.id));
+    const specificsMap = this.buildSpecificsMap();
 
     const categories = {
       'TECHNICAL_SEO': 'A. Technical SEO',
@@ -346,15 +433,14 @@ class ProfessionalSEOReportGenerator {
     };
 
     for (const [categoryKey, categoryTitle] of Object.entries(categories)) {
-      // Only show issues that are in the selected set
       const categoryIssues = selectedIssues.filter(r => r.category === categoryKey);
-
       if (categoryIssues.length === 0) continue;
 
       html += `<h2>${categoryTitle}</h2>\n`;
 
       for (const issue of categoryIssues) {
-        html += this.buildIssueCard(issue);
+        const specifics = specificsMap.get(issue.title) || null;
+        html += this.buildIssueCard(issue, specifics);
       }
 
       html += '\n';
@@ -364,9 +450,11 @@ class ProfessionalSEOReportGenerator {
   }
 
   /**
-   * Build single issue card with evidence
+   * Build single issue card with before/after specifics table
+   * @param {Object} issue - Recommendation record
+   * @param {Array|null} specifics - Per-page specifics from analyzer results
    */
-  buildIssueCard(issue) {
+  buildIssueCard(issue, specifics = null) {
     const severity = issue.priority.toLowerCase();
     const evidence = this.getIssueEvidence(issue);
 
@@ -376,39 +464,40 @@ class ProfessionalSEOReportGenerator {
     <span class="issue-title">${this.escapeHTML(this.truncate(issue.title, 80))}</span>
     <span class="issue-severity ${severity}">${issue.priority}</span>
   </div>
-  <div class="issue-description">${this.escapeHTML(this.truncate(issue.description, 250))}</div>
+  <div class="issue-description">${this.escapeHTML(this.truncate(issue.description, 300))}</div>
 `;
 
-    // Add evidence if available
-    if (evidence && evidence.length > 0) {
-      html += `
-  <div class="issue-evidence">
-    <div class="issue-evidence-label">Evidence:</div>
-`;
-      for (const ev of evidence.slice(0, 2)) { // Max 2 examples
+    // Before/After specifics table (highest value — show first)
+    if (specifics && specifics.length > 0) {
+      html += `  <div class="before-after-section">\n`;
+      html += `    <div class="before-after-label">What to change (copy-paste ready):</div>\n`;
+      html += this.buildBeforeAfterTable(specifics);
+      html += `  </div>\n`;
+    } else if (evidence && evidence.length > 0) {
+      // Fall back to generic evidence list
+      html += `  <div class="issue-evidence">\n    <div class="issue-evidence-label">Affected pages:</div>\n`;
+      for (const ev of evidence.slice(0, 3)) {
         if (ev.url) {
-          const displayUrl = ev.url.length > 60
-            ? ev.url.substring(0, 57) + '...'
-            : ev.url;
-          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(displayUrl)}${ev.detail ? ` - ${this.escapeHTML(this.truncate(ev.detail, 80))}` : ''}</div>\n`;
+          const displayUrl = ev.url.length > 70 ? ev.url.substring(0, 67) + '...' : ev.url;
+          html += `    <div class="issue-evidence-url">• ${this.escapeHTML(displayUrl)}${ev.detail ? ` — ${this.escapeHTML(this.truncate(ev.detail, 80))}` : ''}</div>\n`;
         } else if (ev.detail) {
           html += `    <div>• ${this.escapeHTML(this.truncate(ev.detail, 100))}</div>\n`;
         }
       }
-      if (issue.affectedPages > 2) {
-        html += `    <div class="text-gray">...and ${issue.affectedPages - 2} more pages</div>\n`;
+      if (issue.affectedPages > 3) {
+        html += `    <div class="text-gray">...and ${issue.affectedPages - 3} more pages</div>\n`;
       }
       html += `  </div>\n`;
     }
 
-    // Recommendation
+    // Fix instruction
     if (issue.implementation) {
-      html += `  <div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(this.truncate(issue.implementation, 200))}</div>\n`;
+      html += `  <div class="issue-fix"><strong>How to fix:</strong> ${this.escapeHTML(this.truncate(issue.implementation, 250))}</div>\n`;
     }
 
     // Impact
     if (issue.expectedImpact) {
-      html += `  <div class="issue-impact">Impact: ${this.escapeHTML(this.truncate(issue.expectedImpact, 150))}</div>\n`;
+      html += `  <div class="issue-impact">Expected impact: ${this.escapeHTML(this.truncate(issue.expectedImpact, 150))}</div>\n`;
     }
 
     html += `</div>\n`;

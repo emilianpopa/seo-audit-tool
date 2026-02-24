@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { URL } from 'url';
 import { isSameDomain, resolveUrl, extractPath } from '../../utils/urlUtils.js';
 import logger from '../../config/logger.js';
+import CMSDetector from './CMSDetector.js';
 
 class WebsiteCrawler {
   constructor(options = {}) {
@@ -16,6 +17,7 @@ class WebsiteCrawler {
     this.visited = new Set();
     this.queue = [];
     this.results = [];
+    this.cmsDetection = null; // populated from the homepage fetch
   }
 
   /**
@@ -90,10 +92,14 @@ class WebsiteCrawler {
     logger.info({
       startUrl,
       pagesCrawled: this.results.length,
-      pagesSkipped: this.queue.length
+      pagesSkipped: this.queue.length,
+      cms: this.cmsDetection?.platform || 'unknown'
     }, 'Crawl completed');
 
-    return this.results;
+    return {
+      pages: this.results,
+      cmsDetection: this.cmsDetection
+    };
   }
 
   /**
@@ -117,6 +123,22 @@ class WebsiteCrawler {
       const loadTime = Date.now() - startTime;
       const html = response.data;
       const $ = cheerio.load(html);
+
+      // Run CMS detection on the first page (homepage) only
+      if (!this.cmsDetection) {
+        const headers = {};
+        for (const [k, v] of Object.entries(response.headers || {})) {
+          headers[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
+        }
+        const cookies = (response.headers['set-cookie'] || []).join('; ');
+        this.cmsDetection = CMSDetector.detect({ headers, html, cookies });
+        logger.info({
+          url,
+          cms: this.cmsDetection.platform,
+          confidence: this.cmsDetection.confidence,
+          confidencePct: this.cmsDetection.confidencePct
+        }, 'CMS detected');
+      }
 
       // Extract metadata
       const metadata = this.extractMetadata($, url);

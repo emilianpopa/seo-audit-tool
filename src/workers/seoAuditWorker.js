@@ -47,11 +47,12 @@ async function processAudit(job) {
       timeout: 10000
     });
 
-    const crawledPages = await crawler.crawl(targetUrl);
+    const { pages: crawledPages, cmsDetection } = await crawler.crawl(targetUrl);
 
     logger.info({
       auditId,
-      pagesCrawled: crawledPages.length
+      pagesCrawled: crawledPages.length,
+      cms: cmsDetection?.platform || 'unknown'
     }, 'Website crawl completed');
 
     await job.updateProgress(10);
@@ -95,60 +96,23 @@ async function processAudit(job) {
     await job.updateProgress(15);
 
     // ========================================================================
-    // STEP 3-8: Run Analyzers (15% - 85% progress)
+    // STEP 3-8: Run all 6 analyzers in parallel (15% - 85% progress)
     // ========================================================================
-    logger.info({ auditId }, 'Steps 3-8: Running analyzers');
+    logger.info({ auditId }, 'Steps 3-8: Running all 6 analyzers in parallel');
 
-    const analyzerResults = [];
-    let progress = 15;
+    const [technicalResult, onPageResult, contentResult, performanceResult, authorityResult, localSEOResult] =
+      await Promise.all([
+        new TechnicalSEOAnalyzer(auditId, audit.domain, crawledPages).analyze(),
+        new OnPageSEOAnalyzer(auditId, audit.domain, crawledPages).analyze(),
+        new ContentQualityAnalyzer(auditId, audit.domain, crawledPages).analyze(),
+        new PerformanceAnalyzer(auditId, audit.domain, crawledPages).analyze(),
+        new AuthorityAnalyzer(auditId, audit.domain, crawledPages).analyze(),
+        new LocalSEOAnalyzer(auditId, audit.domain, crawledPages).analyze()
+      ]);
 
-    // STEP 3: Technical SEO Analyzer (15% - 30%)
-    logger.info({ auditId }, 'Running Technical SEO analyzer');
-    const technicalAnalyzer = new TechnicalSEOAnalyzer(auditId, audit.domain, crawledPages);
-    const technicalResult = await technicalAnalyzer.analyze();
-    analyzerResults.push(technicalResult);
-    progress = 30;
-    await job.updateProgress(progress);
+    const analyzerResults = [technicalResult, onPageResult, contentResult, performanceResult, authorityResult, localSEOResult];
 
-    // STEP 4: On-Page SEO Analyzer (30% - 45%)
-    logger.info({ auditId }, 'Running On-Page SEO analyzer');
-    const onPageAnalyzer = new OnPageSEOAnalyzer(auditId, audit.domain, crawledPages);
-    const onPageResult = await onPageAnalyzer.analyze();
-    analyzerResults.push(onPageResult);
-    progress = 45;
-    await job.updateProgress(progress);
-
-    // STEP 5: Content Quality Analyzer (45% - 60%)
-    logger.info({ auditId }, 'Running Content Quality analyzer');
-    const contentAnalyzer = new ContentQualityAnalyzer(auditId, audit.domain, crawledPages);
-    const contentResult = await contentAnalyzer.analyze();
-    analyzerResults.push(contentResult);
-    progress = 60;
-    await job.updateProgress(progress);
-
-    // STEP 6: Performance Analyzer (60% - 70%)
-    logger.info({ auditId }, 'Running Performance analyzer');
-    const performanceAnalyzer = new PerformanceAnalyzer(auditId, audit.domain, crawledPages);
-    const performanceResult = await performanceAnalyzer.analyze();
-    analyzerResults.push(performanceResult);
-    progress = 70;
-    await job.updateProgress(progress);
-
-    // STEP 7: Authority Analyzer (70% - 78%)
-    logger.info({ auditId }, 'Running Authority analyzer');
-    const authorityAnalyzer = new AuthorityAnalyzer(auditId, audit.domain, crawledPages);
-    const authorityResult = await authorityAnalyzer.analyze();
-    analyzerResults.push(authorityResult);
-    progress = 78;
-    await job.updateProgress(progress);
-
-    // STEP 8: Local SEO Analyzer (78% - 85%)
-    logger.info({ auditId }, 'Running Local SEO analyzer');
-    const localSEOAnalyzer = new LocalSEOAnalyzer(auditId, audit.domain, crawledPages);
-    const localSEOResult = await localSEOAnalyzer.analyze();
-    analyzerResults.push(localSEOResult);
-    progress = 85;
-    await job.updateProgress(progress);
+    await job.updateProgress(85);
 
     // ========================================================================
     // STEP 9: Save Analyzer Results & Calculate Overall Score (85% - 90%)
@@ -301,7 +265,19 @@ async function processAudit(job) {
         progress: 100,
         overallScore,
         scoreRating,
-        completedAt: new Date()
+        completedAt: new Date(),
+        // Store CMS detection in metadata
+        ...(cmsDetection && {
+          metadata: {
+            cmsDetection: {
+              platform: cmsDetection.platform,
+              platformKey: cmsDetection.platformKey,
+              confidence: cmsDetection.confidence,
+              confidencePct: cmsDetection.confidencePct,
+              apiUrl: cmsDetection.apiUrl
+            }
+          }
+        })
       }
     });
 

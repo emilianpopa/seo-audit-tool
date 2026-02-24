@@ -43,6 +43,9 @@ model SeoAudit {
   // Configuration
   config        Json        @default("{}") // Audit settings (depth, pages to crawl, etc.)
 
+  // Extended metadata (CMS detection, integration status, etc.)
+  metadata      Json?
+
   // Relations
   results          SeoAuditResult[]
   pages            SeoAuditPage[]
