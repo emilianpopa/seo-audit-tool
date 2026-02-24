@@ -287,11 +287,17 @@ class ProfessionalSEOReportGenerator {
     // Pages 3-6: Findings by Category (with evidence)
     sections.push(this.buildFindingsByCategory());
 
+    // Keyword & Content Optimisation table (after findings)
+    sections.push(this.buildKeywordOptimizationTable(this.audit));
+
     // Pages 7-8: Priority Backlog + Effort/Impact Matrix
     sections.push(this.buildPriorityBacklog());
 
     // Pages 9-10: 30/60/90 Day Roadmap
     sections.push(this.buildRoadmap());
+
+    // Other Website Improvements (after roadmap, before tools)
+    sections.push(this.buildOtherImprovements());
 
     // Recommended Tools & Resources
     sections.push(this.buildToolsAndResources());
@@ -964,21 +970,128 @@ class ProfessionalSEOReportGenerator {
    */
   buildWhatIsWorking(auditData) {
     const checkLabels = {
-      ssl: { label: 'SSL / HTTPS Active', desc: 'Your site uses HTTPS, a confirmed Google ranking signal.' },
-      sitemap: { label: 'XML Sitemap Present', desc: 'Search engines can discover and index your pages efficiently.' },
-      mobileResponsive: { label: 'Mobile-Responsive Design', desc: 'Your site adapts to mobile screens, satisfying Google\'s mobile-first index.' },
-      robotsTxt: { label: 'Robots.txt Configured', desc: 'Search engine crawlers are properly guided through your site.' },
-      canonical: { label: 'Canonical Tags Present', desc: 'Duplicate content signals are managed to consolidate ranking authority.' },
-      metaDescription: { label: 'Meta Descriptions Present', desc: 'Pages have descriptive meta text to improve click-through rates in search results.' },
-      titleTag: { label: 'Title Tags Present', desc: 'Pages have properly configured title tags for search visibility.' },
-      headings: { label: 'Heading Structure Present', desc: 'Pages use heading hierarchy to help search engines understand content structure.' },
-      compression: { label: 'Content Compression Enabled', desc: 'GZIP/Brotli compression reduces page weight and improves load speed.' },
-      httpsRedirect: { label: 'HTTP to HTTPS Redirect', desc: 'All HTTP traffic is redirected to the secure HTTPS version of your site.' },
-      structuredData: { label: 'Structured Data Present', desc: 'Schema markup helps search engines understand and display your content as rich results.' },
-      pageSpeed: { label: 'Acceptable Page Speed', desc: 'Page load performance meets baseline thresholds for a positive user experience.' },
-      images: { label: 'Images Optimised', desc: 'Site images are appropriately sized and formatted for web delivery.' },
-      internalLinking: { label: 'Internal Linking Structure', desc: 'Pages are well-connected internally, distributing authority and aiding crawlability.' },
-      hreflang: { label: 'Language Tags Present', desc: 'Hreflang tags properly signal language and regional targeting to search engines.' }
+      ssl: {
+        label: 'SSL / HTTPS Active',
+        desc: 'Your site uses HTTPS, a confirmed Google ranking signal and trust indicator for users.',
+        preserve: 'Maintain your SSL certificate renewal and monitor for mixed-content warnings.'
+      },
+      sitemap: {
+        label: 'XML Sitemap Present',
+        desc: 'Search engines can efficiently discover and crawl all your pages.',
+        preserve: 'Keep the sitemap updated whenever new pages are added or removed.'
+      },
+      mobileResponsive: {
+        label: 'Mobile-Responsive Design',
+        desc: 'Your site adapts to all screen sizes, satisfying Google\'s mobile-first indexing.',
+        preserve: 'Continue testing on multiple devices and maintain a mobile-first design approach.'
+      },
+      robotsTxt: {
+        label: 'robots.txt Present',
+        desc: 'Search engine crawlers are guided by a robots.txt file.',
+        preserve: 'Never add Disallow: / rules without testing their impact in Google Search Console.'
+      },
+      structuredData: {
+        label: 'Structured Data Detected',
+        desc: 'Schema markup helps Google understand your content and can unlock rich results.',
+        preserve: 'Validate schema regularly with schema.org/validator and expand to new page types.'
+      },
+      contactInformation: {
+        label: 'Contact Information Present',
+        desc: 'Visible contact details build trust with both users and search engines.',
+        preserve: 'Ensure NAP (Name, Address, Phone) is consistent across all platforms.'
+      },
+      internalLinking: {
+        label: 'Internal Linking Structure',
+        desc: 'Internal links distribute page authority and help users navigate your content.',
+        preserve: 'Aim for 3–5 contextual internal links per page and avoid orphan pages.'
+      },
+      titleTags: {
+        label: 'Title Tags Present',
+        desc: 'All key pages have title tags, which are a primary on-page ranking factor.',
+        preserve: 'Keep titles between 50–60 characters and include your primary keyword near the front.'
+      },
+      metaDescriptions: {
+        label: 'Meta Descriptions Present',
+        desc: 'Meta descriptions improve click-through rates from search results.',
+        preserve: 'Write unique, compelling 130–155 character descriptions for every page.'
+      },
+      socialMedia: {
+        label: 'Social Media Presence',
+        desc: 'Active social profiles support brand authority and drive referral traffic.',
+        preserve: 'Maintain consistent posting cadence and link all profiles back to the website.'
+      },
+      privacyPolicy: {
+        label: 'Privacy Policy Page',
+        desc: 'A privacy policy page builds user trust and is required under GDPR and CCPA.',
+        preserve: 'Review and update the policy annually to reflect any data handling changes.'
+      },
+      // Legacy keys mapped to new richer entries
+      canonical: {
+        label: 'Canonical Tags Present',
+        desc: 'Duplicate content signals are managed to consolidate ranking authority.',
+        preserve: 'Audit canonical tags whenever you add new URL parameters or pagination.'
+      },
+      metaDescription: {
+        label: 'Meta Descriptions Present',
+        desc: 'Meta descriptions improve click-through rates from search results.',
+        preserve: 'Write unique, compelling 130–155 character descriptions for every page.'
+      },
+      titleTag: {
+        label: 'Title Tags Present',
+        desc: 'All key pages have title tags, which are a primary on-page ranking factor.',
+        preserve: 'Keep titles between 50–60 characters and include your primary keyword near the front.'
+      },
+      headings: {
+        label: 'Heading Structure Present',
+        desc: 'Pages use heading hierarchy to help search engines understand content structure.',
+        preserve: 'Ensure every page has exactly one H1 and logical H2/H3 sub-headings.'
+      },
+      compression: {
+        label: 'Content Compression Enabled',
+        desc: 'GZIP/Brotli compression reduces page weight and improves load speed.',
+        preserve: 'Check compression is active after any server or CDN configuration changes.'
+      },
+      httpsRedirect: {
+        label: 'HTTP to HTTPS Redirect',
+        desc: 'All HTTP traffic is redirected to the secure HTTPS version of your site.',
+        preserve: 'Verify redirect chains remain a single 301 hop after any infrastructure changes.'
+      },
+      pageSpeed: {
+        label: 'Acceptable Page Speed',
+        desc: 'Page load performance meets baseline thresholds for a positive user experience.',
+        preserve: 'Monitor Core Web Vitals in Google Search Console monthly.'
+      },
+      images: {
+        label: 'Images Optimised',
+        desc: 'Site images are appropriately sized and formatted for web delivery.',
+        preserve: 'Continue using WebP format and lazy-loading for all new images.'
+      },
+      hreflang: {
+        label: 'Language Tags Present',
+        desc: 'Hreflang tags properly signal language and regional targeting to search engines.',
+        preserve: 'Update hreflang tags whenever new language variants or regions are added.'
+      },
+      // Category-level fallbacks
+      ON_PAGE_SEO: {
+        label: 'Strong On-Page SEO Foundation',
+        desc: 'Your on-page optimisation is performing well across title tags, headings, and page structure.',
+        preserve: 'Continue following on-page best practices as you create new content.'
+      },
+      CONTENT_QUALITY: {
+        label: 'Good Content Quality',
+        desc: 'Content across your site meets quality thresholds for word count and structure.',
+        preserve: 'Keep publishing high-quality content and aim for 1,000+ words on key service pages.'
+      },
+      PERFORMANCE: {
+        label: 'Acceptable Page Performance',
+        desc: 'Page load times are within an acceptable range.',
+        preserve: 'Monitor Core Web Vitals in Google Search Console monthly.'
+      },
+      AUTHORITY: {
+        label: 'Authority Signals Present',
+        desc: 'Trust signals and contact information are present across the site.',
+        preserve: 'Continue building backlinks from relevant, high-authority sources.'
+      }
     };
 
     const passingItems = [];
@@ -1004,12 +1117,36 @@ class ProfessionalSEOReportGenerator {
         const alreadyAdded = passingItems.some(p => p._category === categoryKey);
         if (!alreadyAdded) {
           const categoryLabels = {
-            technicalseo: { label: 'Technical SEO Fundamentals', desc: 'Core technical foundations are in place to support search engine crawling and indexing.' },
-            onpageseo: { label: 'On-Page SEO Foundations', desc: 'Key on-page elements are optimised to communicate relevance to search engines.' },
-            contentquality: { label: 'Content Quality', desc: 'Site content meets quality thresholds for depth and relevance.' },
-            performance: { label: 'Site Performance', desc: 'Pages load within acceptable timeframes for users and search engine crawlers.' },
-            authoritybacklinks: { label: 'Authority Signals', desc: 'Trust and authority indicators are present on the site.' },
-            localseo: { label: 'Local SEO Setup', desc: 'Local search signals are configured to support geographic visibility.' }
+            technicalseo: {
+              label: 'Technical SEO Fundamentals',
+              desc: 'Core technical foundations are in place to support search engine crawling and indexing.',
+              preserve: 'Run a full technical crawl quarterly to catch new issues early.'
+            },
+            onpageseo: {
+              label: 'Strong On-Page SEO Foundation',
+              desc: 'Your on-page optimisation is performing well across title tags, headings, and page structure.',
+              preserve: 'Continue following on-page best practices as you create new content.'
+            },
+            contentquality: {
+              label: 'Good Content Quality',
+              desc: 'Content across your site meets quality thresholds for depth and relevance.',
+              preserve: 'Keep publishing high-quality content and aim for 1,000+ words on key service pages.'
+            },
+            performance: {
+              label: 'Acceptable Page Performance',
+              desc: 'Page load times are within an acceptable range.',
+              preserve: 'Monitor Core Web Vitals in Google Search Console monthly.'
+            },
+            authoritybacklinks: {
+              label: 'Authority Signals Present',
+              desc: 'Trust signals and contact information are present across the site.',
+              preserve: 'Continue building backlinks from relevant, high-authority sources.'
+            },
+            localseo: {
+              label: 'Local SEO Setup',
+              desc: 'Local search signals are configured to support geographic visibility.',
+              preserve: 'Keep your Google Business Profile updated with current hours, photos, and posts.'
+            }
           };
           if (categoryLabels[categoryKey]) {
             const item = { ...categoryLabels[categoryKey], _category: categoryKey };
@@ -1027,7 +1164,7 @@ class ProfessionalSEOReportGenerator {
       return true;
     });
 
-    const displayItems = unique.slice(0, 8);
+    const displayItems = unique.slice(0, 10);
 
     let html = `
 <div class="section what-working-section page-break-before">
@@ -1038,7 +1175,7 @@ class ProfessionalSEOReportGenerator {
   <div class="working-grid">
 `;
 
-    if (displayItems.length < 3) {
+    if (displayItems.length < 2) {
       html += `
     <div class="working-card" style="grid-column: 1 / -1;">
       <div class="check-icon">&#10003;</div>
@@ -1050,12 +1187,14 @@ class ProfessionalSEOReportGenerator {
 `;
     } else {
       for (const item of displayItems) {
+        const preserve = item.preserve || '';
         html += `
     <div class="working-card">
       <div class="check-icon">&#10003;</div>
       <div class="working-detail">
         <strong>${this.escapeHTML(item.label)}</strong>
         <p>${this.escapeHTML(item.desc)}</p>
+        ${preserve ? `<p class="preserve-note"><span class="preserve-label">Preserve:</span> ${this.escapeHTML(preserve)}</p>` : ''}
       </div>
     </div>
 `;
@@ -1209,6 +1348,272 @@ class ProfessionalSEOReportGenerator {
       </tr>
     </tbody>
   </table>
+</div>
+`;
+  }
+
+  /**
+   * Build "Keyword & Content Optimisation" table — copy-paste-ready title and meta recommendations
+   */
+  buildKeywordOptimizationTable(auditData) {
+    const onPageResult = (auditData.results || []).find(r => r.category === 'ON_PAGE_SEO');
+    if (!onPageResult) return '';
+
+    const specifics = [];
+    const issues = onPageResult.issues || [];
+
+    for (const issue of issues) {
+      if (Array.isArray(issue.specifics)) {
+        for (const s of issue.specifics) {
+          specifics.push(s);
+        }
+      }
+    }
+
+    // Group by URL — build a map of url -> { titleBefore, titleAfter, metaBefore, metaAfter }
+    const pageMap = new Map();
+
+    for (const s of specifics) {
+      const url = s.url || '';
+      if (!url) continue;
+      if (!pageMap.has(url)) pageMap.set(url, { url });
+      const entry = pageMap.get(url);
+
+      const field = (s.field || '').toLowerCase();
+      if (field === 'title') {
+        entry.titleBefore = s.before || '';
+        entry.titleAfter = s.after || '';
+      } else if (field === 'meta_description' || field === 'meta') {
+        entry.metaBefore = s.before || '';
+        entry.metaAfter = s.after || '';
+      }
+    }
+
+    const pages = [...pageMap.values()].filter(p => p.titleAfter || p.metaAfter).slice(0, 8);
+
+    if (pages.length === 0) return '';
+
+    let tbodyHtml = '';
+
+    for (const page of pages) {
+      let pagePath = '';
+      try {
+        pagePath = new URL(page.url).pathname || '/';
+      } catch {
+        pagePath = page.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+      }
+
+      const hasTitle = !!(page.titleAfter);
+      const hasMeta = !!(page.metaAfter);
+      const rowspan = (hasTitle && hasMeta) ? 2 : 1;
+
+      if (hasTitle) {
+        tbodyHtml += `        <tr>\n`;
+        if (rowspan === 2) {
+          tbodyHtml += `          <td rowspan="2" class="page-cell">${this.escapeHTML(pagePath)}</td>\n`;
+        } else {
+          tbodyHtml += `          <td class="page-cell">${this.escapeHTML(pagePath)}</td>\n`;
+        }
+        tbodyHtml += `          <td class="element-cell">Title Tag</td>\n`;
+        tbodyHtml += `          <td class="current-cell"><span class="current-val">${this.escapeHTML(page.titleBefore || '—')}</span></td>\n`;
+        tbodyHtml += `          <td class="recommended-cell"><strong>${this.escapeHTML(page.titleAfter)}</strong></td>\n`;
+        tbodyHtml += `        </tr>\n`;
+      }
+
+      if (hasMeta) {
+        tbodyHtml += `        <tr>\n`;
+        if (!hasTitle) {
+          tbodyHtml += `          <td class="page-cell">${this.escapeHTML(pagePath)}</td>\n`;
+        }
+        tbodyHtml += `          <td class="element-cell">Meta Description</td>\n`;
+        tbodyHtml += `          <td class="current-cell"><span class="current-val">${this.escapeHTML(page.metaBefore || '—')}</span></td>\n`;
+        tbodyHtml += `          <td class="recommended-cell"><strong>${this.escapeHTML(page.metaAfter)}</strong></td>\n`;
+        tbodyHtml += `        </tr>\n`;
+      }
+    }
+
+    return `
+<div class="section keyword-table-section">
+  <div class="section-header" style="padding: 16pt 0 8pt 0;">
+    <h2>Recommended Content &amp; Structural Updates</h2>
+    <p class="section-subtitle" style="color: #64748b; font-size: 9pt; margin: 0;">Copy-paste-ready title tags and meta descriptions for your top pages</p>
+  </div>
+  <div class="kw-table-wrap">
+    <h3 class="kw-subhead">Page-by-Page Recommendations</h3>
+    <table class="kw-table">
+      <thead>
+        <tr>
+          <th>Page</th>
+          <th>Element</th>
+          <th>Current</th>
+          <th>Recommended</th>
+        </tr>
+      </thead>
+      <tbody>
+${tbodyHtml}      </tbody>
+    </table>
+  </div>
+</div>
+`;
+  }
+
+  /**
+   * Build "Other Website Improvements" section — advisory UX, CRO, content, and analytics guidance
+   */
+  buildOtherImprovements() {
+    return `
+<div class="section other-improvements-section page-break-before">
+  <div class="section-header" style="padding: 24px;">
+    <h2 style="border-bottom: none; margin: 0 0 6pt 0;">5. Other Website Improvements</h2>
+    <p class="section-subtitle" style="color: #64748b; font-size: 9pt; margin: 0;">Beyond SEO — improvements to increase conversions, authority, and long-term traffic</p>
+  </div>
+  <div class="improvements-body">
+
+    <div class="improvement-category">
+      <h3 class="improvement-cat-title">A. UX / UI Improvements</h3>
+      <div class="improvement-grid">
+        <div class="improvement-card">
+          <div class="improvement-title">Sticky Navigation Bar</div>
+          <div class="improvement-desc">Add a sticky header on scroll so primary CTA buttons remain accessible throughout long pages.</div>
+          <div class="improvement-impact">Impact: Increase conversions by 10–15%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Mobile Navigation Optimisation</div>
+          <div class="improvement-desc">Ensure the hamburger menu has a large tap target (min 44×44px). Consider a sticky mobile CTA button.</div>
+          <div class="improvement-impact">Impact: Reduce mobile bounce rate by 5–8%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Visual Hierarchy Enhancement</div>
+          <div class="improvement-desc">Use larger, bolder typography for key statistics and data points. Add visual emphasis to your most important value metrics.</div>
+          <div class="improvement-impact">Impact: Increase engagement time by 20–30 seconds</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Interactive Demo or Product Tour</div>
+          <div class="improvement-desc">Add a 'See How It Works' video or interactive walkthrough above the fold on your homepage.</div>
+          <div class="improvement-impact">Impact: Increase trial signups by 15–25%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Accessibility Audit (WCAG 2.1)</div>
+          <div class="improvement-desc">Run a WAVE or axe audit to ensure colour contrast, keyboard navigation, and ARIA label compliance.</div>
+          <div class="improvement-impact">Impact: Expand market reach; reduce legal risk</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Breadcrumb Navigation</div>
+          <div class="improvement-desc">Add breadcrumb navigation to all interior pages with BreadcrumbList schema markup for enhanced UX and SEO.</div>
+          <div class="improvement-impact">Impact: Lower bounce rate; improve crawl efficiency</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="improvement-category">
+      <h3 class="improvement-cat-title">B. Conversion Rate Optimisation (CRO)</h3>
+      <div class="improvement-grid">
+        <div class="improvement-card">
+          <div class="improvement-title">A/B Test Primary CTA</div>
+          <div class="improvement-desc">Test CTA copy variations: 'Get Started Free' vs 'See It in Action' vs 'Start Your Free Trial'. Also test button colour.</div>
+          <div class="improvement-impact">Impact: Increase conversions by 15–30%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Exit-Intent Popup</div>
+          <div class="improvement-desc">When a user moves to close the tab, trigger a popup offering a free resource (guide, checklist, or audit). Capture email before they leave.</div>
+          <div class="improvement-impact">Impact: Capture 5–10% of abandoning visitors</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Social Proof Notifications</div>
+          <div class="improvement-desc">Show real-time activity notifications ('Someone from London just signed up') using tools like UseProof or TrustPulse.</div>
+          <div class="improvement-impact">Impact: Boost conversions by 8–12%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">ROI Calculator</div>
+          <div class="improvement-desc">Add an interactive calculator so visitors can estimate their personal ROI. Embed on the homepage or pricing page.</div>
+          <div class="improvement-impact">Impact: Increase qualified leads by 20–30%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Optimise Form Fields</div>
+          <div class="improvement-desc">Reduce sign-up forms to 3 fields maximum (Name, Email, Company). Collect additional information post-signup.</div>
+          <div class="improvement-impact">Impact: Increase form submissions by 15–25%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Dedicated Landing Pages</div>
+          <div class="improvement-desc">Create focused landing pages for each paid advertising campaign — single goal, no navigation, specific copy.</div>
+          <div class="improvement-impact">Impact: Increase PPC conversion rate by 25–40%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="improvement-category">
+      <h3 class="improvement-cat-title">C. Content Strategy &amp; Authority Building</h3>
+      <div class="improvement-grid">
+        <div class="improvement-card">
+          <div class="improvement-title">Ultimate Guides Hub</div>
+          <div class="improvement-desc">Create 5–8 comprehensive guides (3,000–5,000 words). Gate behind email capture to build your list. Promote via LinkedIn and organic search.</div>
+          <div class="improvement-impact">Impact: Generate 100–200 qualified leads/month</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Video Content Series</div>
+          <div class="improvement-desc">Launch a YouTube series with weekly 5–10 min videos. Embed on relevant website pages and optimise with transcripts, tags, and chapters.</div>
+          <div class="improvement-impact">Impact: Increase dwell time; strengthen E-E-A-T</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Case Study Library</div>
+          <div class="improvement-desc">Create 5–10 detailed case studies with measurable results (Challenge → Solution → Results). Include quotes, photos, and specific ROI metrics.</div>
+          <div class="improvement-impact">Impact: Shorten sales cycle by 20–30%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Guest Blogging Campaign</div>
+          <div class="improvement-desc">Target 10–15 high-authority publications in your industry. Aim for 2–3 guest posts per month with a backlink in the author bio.</div>
+          <div class="improvement-impact">Impact: Build backlinks; grow domain authority</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">LinkedIn Newsletter</div>
+          <div class="improvement-desc">Publish a weekly LinkedIn newsletter repurposing blog content. Target 1,000 subscribers in 90 days to build a warm audience.</div>
+          <div class="improvement-impact">Impact: Build authority; nurture leads</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Webinar Series</div>
+          <div class="improvement-desc">Host monthly webinars co-presented with industry partners. Repurpose into blog posts, social clips, and lead magnets.</div>
+          <div class="improvement-impact">Impact: Generate 50–100 qualified leads per webinar</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="improvement-category">
+      <h3 class="improvement-cat-title">D. Analytics &amp; Tracking</h3>
+      <div class="improvement-grid">
+        <div class="improvement-card">
+          <div class="improvement-title">Google Analytics 4 Setup</div>
+          <div class="improvement-desc">Ensure GA4 is configured with conversion goals (form submissions, demo requests, purchases). Enable enhanced measurement.</div>
+          <div class="improvement-impact">Impact: Track user behaviour; identify drop-off points</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Heatmap &amp; Session Recording</div>
+          <div class="improvement-desc">Install Microsoft Clarity (free) or Hotjar to see where users click, scroll, and get confused. Review recordings weekly.</div>
+          <div class="improvement-impact">Impact: Identify UX issues; optimise conversion paths</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Goal Funnel Tracking</div>
+          <div class="improvement-desc">Set up conversion funnels in GA4: Homepage → Service Page → Form → Thank You. Identify where visitors abandon.</div>
+          <div class="improvement-impact">Impact: Increase conversion rate by 15–25%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Custom Looker Studio Dashboard</div>
+          <div class="improvement-desc">Build a weekly reporting dashboard combining GA4, Search Console, and rank tracking data for at-a-glance performance reviews.</div>
+          <div class="improvement-impact">Impact: Data-driven decisions; spot trends early</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">Retargeting Pixel Setup</div>
+          <div class="improvement-desc">Install Meta Pixel and Google Ads remarketing tags to retarget website visitors with personalised ads. Build custom audiences from warm traffic.</div>
+          <div class="improvement-impact">Impact: Increase paid traffic conversion by 30–50%</div>
+        </div>
+        <div class="improvement-card">
+          <div class="improvement-title">A/B Testing Programme</div>
+          <div class="improvement-desc">Set up VWO or Google Optimize for continuous testing of headlines, CTAs, and page layouts. Run one test per month minimum.</div>
+          <div class="improvement-impact">Impact: Compound conversion improvements over time</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 `;
   }
