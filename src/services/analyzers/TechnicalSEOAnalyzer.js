@@ -43,6 +43,10 @@ class TechnicalSEOAnalyzer {
         this.checkCanonicalTags()
       ]);
 
+      // Run synchronous checks that depend on crawled page data
+      this.checkRedirectConsistency();
+      this.checkJSDependentForms();
+
       // Calculate category score
       const categoryScore = this.calculateScore();
 
@@ -467,6 +471,108 @@ class TechnicalSEOAnalyzer {
   }
 
   /**
+   * Check trailing slash / redirect inconsistency
+   * Detects URL paths that appear both with and without a trailing slash
+   * across internal links, which can cause redirect chains.
+   */
+  checkRedirectConsistency() {
+    const withSlash = new Set();
+    const withoutSlash = new Set();
+
+    for (const page of this.pages) {
+      try {
+        const parsed = new URL(page.url);
+        const path = parsed.pathname;
+
+        if (path === '/') continue;
+
+        if (path.endsWith('/')) {
+          withSlash.add(path.slice(0, -1)); // normalise: store without trailing slash
+        } else {
+          withoutSlash.add(path);
+        }
+      } catch (_) {
+        // ignore unparseable URLs
+      }
+    }
+
+    // Find paths that appear in both sets
+    const inconsistentPaths = [...withSlash].filter(p => withoutSlash.has(p));
+    const count = inconsistentPaths.length;
+    const totalPages = this.pages.length;
+
+    this.checks.redirectConsistency = {
+      totalPages,
+      inconsistentPaths: count,
+      status: count === 0 ? 'pass' : 'warning'
+    };
+
+    if (count > 0) {
+      this.issues.push({
+        type: 'trailing_slash_inconsistency',
+        severity: 'medium',
+        title: 'Trailing Slash Inconsistency',
+        description: `${count} URL path(s) appear both with and without trailing slash, potentially causing redirect chains.`,
+        recommendation: 'Standardise all URLs to either always include or always exclude trailing slashes, and implement 301 redirects for the non-canonical form.',
+        affectedPages: count
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      inconsistentPaths: count
+    }, 'Redirect consistency checked');
+  }
+
+  /**
+   * Check for pages that are likely JavaScript-dependent shells
+   * (minimal crawlable content, no schema, no images, not the homepage)
+   */
+  checkJSDependentForms() {
+    const suspectedJSPages = [];
+
+    for (const page of this.pages) {
+      try {
+        const parsed = new URL(page.url);
+        if (parsed.pathname === '/') continue;
+      } catch (_) {
+        continue;
+      }
+
+      const schemaTypes = page.schemaTypes;
+      const hasNoSchema = !schemaTypes || (Array.isArray(schemaTypes) && schemaTypes.length === 0);
+      const wordCount = page.wordCount || 0;
+      const imageCount = page.imageCount || 0;
+
+      if (hasNoSchema && wordCount < 100 && imageCount === 0) {
+        suspectedJSPages.push(page);
+      }
+    }
+
+    this.checks.jsDependentContent = {
+      suspectedJSPages: suspectedJSPages.length,
+      status: suspectedJSPages.length === 0 ? 'pass' : 'warning'
+    };
+
+    if (suspectedJSPages.length > 0) {
+      this.issues.push({
+        type: 'js_dependent_content',
+        severity: 'medium',
+        title: 'Possible JavaScript-Dependent Content',
+        description: `${suspectedJSPages.length} page(s) appear to have minimal crawlable content, suggesting JavaScript may be required to render key content. Search engines may not index this content.`,
+        recommendation: 'Ensure all important page content is available in the static HTML. Use server-side rendering (SSR) or pre-rendering for JavaScript-heavy pages.',
+        affectedPages: suspectedJSPages.length,
+        examples: suspectedJSPages.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words crawled` }))
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      suspectedJSPages: suspectedJSPages.length
+    }, 'JS-dependent content checked');
+  }
+
+  /**
    * Calculate Technical SEO score
    * Weighted scoring based on check results
    * More conservative to match professional SEO tools
@@ -477,8 +583,9 @@ class TechnicalSEOAnalyzer {
       robotsTxt: 15,
       ssl: 30, // Increased from 25 - critical for SEO
       mobileResponsive: 20,
-      structuredData: 10,
-      canonicalTags: 5 // Reduced from 10 - less critical
+      structuredData: 5, // Reduced from 10 to accommodate redirectConsistency
+      canonicalTags: 5, // Reduced from 10 - less critical
+      redirectConsistency: 5 // New: trailing slash / redirect consistency
     };
 
     let totalScore = 0;
@@ -539,8 +646,21 @@ class TechnicalSEOAnalyzer {
       totalWeight += weights.canonicalTags;
     }
 
+    // Redirect consistency score
+    if (this.checks.redirectConsistency) {
+      const inconsistentPaths = this.checks.redirectConsistency.inconsistentPaths || 0;
+      const score = inconsistentPaths === 0 ? 100 : Math.max(0, 100 - inconsistentPaths * 20);
+      totalScore += score * weights.redirectConsistency;
+      totalWeight += weights.redirectConsistency;
+    }
+
     // Calculate final score
-    const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
+    let finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
+
+    // Critical override: if robots.txt blocks all crawlers the site cannot rank
+    if (this.checks.robotsTxt?.hasDisallowAll === true) {
+      finalScore = Math.min(finalScore, 45);
+    }
 
     return Math.max(0, Math.min(100, finalScore));
   }

@@ -40,6 +40,7 @@ class AuthorityAnalyzer {
       this.checkContactInformation();
       this.checkSecurityIndicators();
       this.checkBacklinkIndicators();
+      this.checkTrustBadges();
 
       // Calculate category score
       const categoryScore = this.calculateScore();
@@ -417,6 +418,70 @@ class AuthorityAnalyzer {
   }
 
   /**
+   * Check for trust badges, certifications, and security seals
+   * Uses schema types, heading keywords, and Open Graph tag values as heuristics
+   */
+  checkTrustBadges() {
+    const pagesWithBadges = [];
+    const homepage = this.pages.find(p => p.path === '/' || p.depth === 0);
+    let homepageHasBadges = false;
+
+    for (const page of this.pages) {
+      const schemaTypes = page.schemaTypes || [];
+      const headings = [...(page.h2Tags || []), ...(page.h3Tags || [])].join(' ').toLowerCase();
+      const ogString = JSON.stringify(page.openGraphTags || '').toLowerCase();
+
+      const trustKeywords = ['trustpilot', 'g2', 'bbb', 'better business', 'verified', 'certified', 'award', 'accredited', 'guarantee', 'rated', 'reviews'];
+      const trustSchemas = ['AggregateRating', 'Review', 'Organization'];
+
+      const hasSchemaSignal = schemaTypes.some(s => trustSchemas.includes(s));
+      const hasHeadingSignal = trustKeywords.some(kw => headings.includes(kw));
+      const hasOGSignal = trustKeywords.some(kw => ogString.includes(kw));
+
+      if (hasSchemaSignal || hasHeadingSignal || hasOGSignal) {
+        pagesWithBadges.push({ url: page.url, signals: [
+          ...(hasSchemaSignal ? ['schema'] : []),
+          ...(hasHeadingSignal ? ['headings'] : []),
+          ...(hasOGSignal ? ['og-tags'] : [])
+        ]});
+        if (page === homepage) homepageHasBadges = true;
+      }
+    }
+
+    this.checks.trustBadges = {
+      pagesWithTrustSignals: pagesWithBadges.length,
+      homepageHasTrustSignals: homepageHasBadges,
+      status: homepageHasBadges ? 'pass' : (pagesWithBadges.length > 0 ? 'warning' : 'fail')
+    };
+
+    if (pagesWithBadges.length === 0) {
+      this.issues.push({
+        type: 'no_trust_badges',
+        severity: 'medium',
+        title: 'No Trust Badges or Credentials Detected',
+        description: 'No trust signals were found (review platform badges, certifications, awards, or security seals). These signals strongly influence conversion rates and perceived authority.',
+        recommendation: 'Add trust badges such as Trustpilot reviews, G2 ratings, BBB accreditation, industry certifications, or money-back guarantees — especially on the homepage and key landing pages.',
+        affectedPages: this.pages.length
+      });
+    } else if (!homepageHasBadges) {
+      this.issues.push({
+        type: 'trust_badges_missing_from_homepage',
+        severity: 'low',
+        title: 'Trust Signals Not Prominent on Homepage',
+        description: 'Trust signals were detected on some pages but not on the homepage. The homepage is your highest-traffic page and should prominently feature credibility signals.',
+        recommendation: 'Move trust badges, review counts, and certifications above the fold on the homepage.',
+        affectedPages: 1
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      pagesWithTrustSignals: pagesWithBadges.length,
+      homepageHasTrustSignals: homepageHasBadges
+    }, 'Trust badges checked');
+  }
+
+  /**
    * Calculate Authority score (Trust Signals)
    *
    * IMPORTANT: Without real backlink API data (Moz/Ahrefs), this score is capped.
@@ -424,11 +489,12 @@ class AuthorityAnalyzer {
    */
   calculateScore() {
     const weights = {
-      socialMedia: 15,
+      socialMedia: 10,
       trustSignals: 30,
       contactInformation: 25,
       security: 30,
-      backlinkIndicators: 0 // Don't count without real data
+      backlinkIndicators: 0, // Don't count without real data
+      trustBadges: 15
     };
 
     let totalScore = 0;
@@ -489,6 +555,18 @@ class AuthorityAnalyzer {
     // Backlink indicators: DON'T score without real API data
     // Just provide informational context
     // Real authority comes from Moz DA, Ahrefs DR, referring domains, etc.
+
+    // Trust badges score
+    if (this.checks.trustBadges) {
+      let score = 0;
+      if (this.checks.trustBadges.homepageHasTrustSignals) {
+        score = 100;
+      } else if (this.checks.trustBadges.pagesWithTrustSignals > 0) {
+        score = 50;
+      }
+      totalScore += score * weights.trustBadges;
+      totalWeight += weights.trustBadges;
+    }
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
 

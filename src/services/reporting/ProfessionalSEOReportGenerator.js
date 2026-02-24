@@ -278,6 +278,12 @@ class ProfessionalSEOReportGenerator {
     // Page 2: Score Breakdown + Confidence Notes
     sections.push(this.buildScoreBreakdown());
 
+    // What IS Working (positive findings)
+    sections.push(this.buildWhatIsWorking(this.audit));
+
+    // Expected Results projection table
+    sections.push(this.buildExpectedResults(this.audit));
+
     // Pages 3-6: Findings by Category (with evidence)
     sections.push(this.buildFindingsByCategory());
 
@@ -287,10 +293,16 @@ class ProfessionalSEOReportGenerator {
     // Pages 9-10: 30/60/90 Day Roadmap
     sections.push(this.buildRoadmap());
 
+    // Recommended Tools & Resources
+    sections.push(this.buildToolsAndResources());
+
     // Optional: Appendix (if needed)
     if (this.audit.pages.length > 50) {
       sections.push(this.buildAppendix());
     }
+
+    // Action Summary & Next Steps (closing section)
+    sections.push(this.buildActionSummary(this.audit));
 
     return sections.join('\n');
   }
@@ -585,6 +597,24 @@ class ProfessionalSEOReportGenerator {
    * Build realistic 30/60/90 day roadmap
    */
   buildRoadmap() {
+    function getTaskOwner(title = '', category = '') {
+      const t = title.toLowerCase();
+      const c = category.toLowerCase();
+
+      if (t.includes('content') || t.includes('blog') || t.includes('copy') || t.includes('word') || t.includes('faq') || c.includes('content')) return 'Content';
+      if (t.includes('image') || t.includes('photo') || t.includes('visual') || t.includes('design') || t.includes('brand')) return 'Design';
+      if (t.includes('schema') || t.includes('sitemap') || t.includes('robots') || t.includes('ssl') || t.includes('redirect') || t.includes('javascript') || t.includes('performance') || t.includes('speed') || t.includes('compression') || t.includes('canonical') || t.includes('mobile') || c.includes('technical')) return 'Dev';
+      if (t.includes('google') || t.includes('local') || t.includes('backlink') || t.includes('social') || t.includes('review') || t.includes('directory') || t.includes('citation') || c.includes('authority') || c.includes('local')) return 'Marketing';
+      if (t.includes('title') || t.includes('meta') || t.includes('heading') || t.includes('url') || t.includes('keyword') || c.includes('on-page')) return 'Marketing';
+      return 'Dev';
+    }
+
+    function renderOwnerBadge(title, category) {
+      const owner = getTaskOwner(title, category);
+      const cls = owner.toLowerCase();
+      return `<span class="owner-badge owner-${cls}">${owner}</span>`;
+    }
+
     const quickWins = this.audit.recommendations.filter(r => r.effortLevel === 'QUICK_WIN').slice(0, 4);
     const month1 = this.audit.recommendations.filter(r =>
       ['CRITICAL', 'HIGH'].includes(r.priority) && r.effortLevel !== 'QUICK_WIN'
@@ -609,7 +639,7 @@ class ProfessionalSEOReportGenerator {
     for (const task of quickWins) {
       html += `
     <div class="roadmap-task">
-      <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
+      <div class="roadmap-task-title">${this.escapeHTML(task.title)} ${renderOwnerBadge(task.title, task.category || '')}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Quick'} •
         ${this.escapeHTML(this.truncate(task.expectedImpact || 'Immediate improvement', 120))}
@@ -631,7 +661,7 @@ class ProfessionalSEOReportGenerator {
     for (const task of month1) {
       html += `
     <div class="roadmap-task">
-      <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
+      <div class="roadmap-task-title">${this.escapeHTML(task.title)} ${renderOwnerBadge(task.title, task.category || '')}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Medium effort'} •
         ${this.escapeHTML(this.truncate(task.expectedImpact || 'Improves core SEO metrics', 120))}
@@ -653,7 +683,7 @@ class ProfessionalSEOReportGenerator {
     for (const task of month2) {
       html += `
     <div class="roadmap-task">
-      <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
+      <div class="roadmap-task-title">${this.escapeHTML(task.title)} ${renderOwnerBadge(task.title, task.category || '')}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'Standard effort'} •
         ${this.escapeHTML(this.truncate(task.expectedImpact || 'Enhances user experience', 120))}
@@ -675,7 +705,7 @@ class ProfessionalSEOReportGenerator {
     for (const task of month3) {
       html += `
     <div class="roadmap-task">
-      <div class="roadmap-task-title">${this.escapeHTML(task.title)}</div>
+      <div class="roadmap-task-title">${this.escapeHTML(task.title)} ${renderOwnerBadge(task.title, task.category || '')}</div>
       <div class="roadmap-task-detail">
         ${task.estimatedHours ? `Est. ${task.estimatedHours}h` : 'As capacity allows'} •
         ${this.escapeHTML(this.truncate(task.expectedImpact || 'Long-term improvement', 120))}
@@ -927,6 +957,323 @@ class ProfessionalSEOReportGenerator {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * Build "What IS Working" section — positive findings with green checkmark cards
+   */
+  buildWhatIsWorking(auditData) {
+    const checkLabels = {
+      ssl: { label: 'SSL / HTTPS Active', desc: 'Your site uses HTTPS, a confirmed Google ranking signal.' },
+      sitemap: { label: 'XML Sitemap Present', desc: 'Search engines can discover and index your pages efficiently.' },
+      mobileResponsive: { label: 'Mobile-Responsive Design', desc: 'Your site adapts to mobile screens, satisfying Google\'s mobile-first index.' },
+      robotsTxt: { label: 'Robots.txt Configured', desc: 'Search engine crawlers are properly guided through your site.' },
+      canonical: { label: 'Canonical Tags Present', desc: 'Duplicate content signals are managed to consolidate ranking authority.' },
+      metaDescription: { label: 'Meta Descriptions Present', desc: 'Pages have descriptive meta text to improve click-through rates in search results.' },
+      titleTag: { label: 'Title Tags Present', desc: 'Pages have properly configured title tags for search visibility.' },
+      headings: { label: 'Heading Structure Present', desc: 'Pages use heading hierarchy to help search engines understand content structure.' },
+      compression: { label: 'Content Compression Enabled', desc: 'GZIP/Brotli compression reduces page weight and improves load speed.' },
+      httpsRedirect: { label: 'HTTP to HTTPS Redirect', desc: 'All HTTP traffic is redirected to the secure HTTPS version of your site.' },
+      structuredData: { label: 'Structured Data Present', desc: 'Schema markup helps search engines understand and display your content as rich results.' },
+      pageSpeed: { label: 'Acceptable Page Speed', desc: 'Page load performance meets baseline thresholds for a positive user experience.' },
+      images: { label: 'Images Optimised', desc: 'Site images are appropriately sized and formatted for web delivery.' },
+      internalLinking: { label: 'Internal Linking Structure', desc: 'Pages are well-connected internally, distributing authority and aiding crawlability.' },
+      hreflang: { label: 'Language Tags Present', desc: 'Hreflang tags properly signal language and regional targeting to search engines.' }
+    };
+
+    const passingItems = [];
+
+    for (const result of (auditData.results || [])) {
+      const checks = result.checks || {};
+
+      for (const [key, value] of Object.entries(checks)) {
+        if (!checkLabels[key]) continue;
+
+        const isPassing =
+          (typeof value === 'object' && value !== null && value.status === 'pass') ||
+          (typeof value === 'boolean' && value === true) ||
+          (typeof value === 'number' && value >= 70);
+
+        if (isPassing) {
+          passingItems.push(checkLabels[key]);
+        }
+      }
+
+      if ((result.categoryScore || 0) >= 70 && result.category) {
+        const categoryKey = (result.category || '').toLowerCase().replace(/_/g, '');
+        const alreadyAdded = passingItems.some(p => p._category === categoryKey);
+        if (!alreadyAdded) {
+          const categoryLabels = {
+            technicalseo: { label: 'Technical SEO Fundamentals', desc: 'Core technical foundations are in place to support search engine crawling and indexing.' },
+            onpageseo: { label: 'On-Page SEO Foundations', desc: 'Key on-page elements are optimised to communicate relevance to search engines.' },
+            contentquality: { label: 'Content Quality', desc: 'Site content meets quality thresholds for depth and relevance.' },
+            performance: { label: 'Site Performance', desc: 'Pages load within acceptable timeframes for users and search engine crawlers.' },
+            authoritybacklinks: { label: 'Authority Signals', desc: 'Trust and authority indicators are present on the site.' },
+            localseo: { label: 'Local SEO Setup', desc: 'Local search signals are configured to support geographic visibility.' }
+          };
+          if (categoryLabels[categoryKey]) {
+            const item = { ...categoryLabels[categoryKey], _category: categoryKey };
+            passingItems.push(item);
+          }
+        }
+      }
+    }
+
+    // Deduplicate by label
+    const seen = new Set();
+    const unique = passingItems.filter(item => {
+      if (seen.has(item.label)) return false;
+      seen.add(item.label);
+      return true;
+    });
+
+    const displayItems = unique.slice(0, 8);
+
+    let html = `
+<div class="section what-working-section page-break-before">
+  <div class="section-header green-header">
+    <h2 style="color: white; border-bottom: none; margin: 0 0 6pt 0;">What IS Working</h2>
+    <p class="section-subtitle" style="color: rgba(255,255,255,0.85); margin: 0;">These areas are performing well and should be maintained</p>
+  </div>
+  <div class="working-grid">
+`;
+
+    if (displayItems.length < 3) {
+      html += `
+    <div class="working-card" style="grid-column: 1 / -1;">
+      <div class="check-icon">&#10003;</div>
+      <div class="working-detail">
+        <strong>Analysis in progress</strong>
+        <p>Improvements will reveal more strengths as recommendations are implemented.</p>
+      </div>
+    </div>
+`;
+    } else {
+      for (const item of displayItems) {
+        html += `
+    <div class="working-card">
+      <div class="check-icon">&#10003;</div>
+      <div class="working-detail">
+        <strong>${this.escapeHTML(item.label)}</strong>
+        <p>${this.escapeHTML(item.desc)}</p>
+      </div>
+    </div>
+`;
+      }
+    }
+
+    html += `
+  </div>
+</div>
+`;
+    return html;
+  }
+
+  /**
+   * Build "Expected Results" section — projected improvements table
+   */
+  buildExpectedResults(auditData) {
+    const currentScore = auditData.overallScore || 0;
+    const score30Low = currentScore + 8;
+    const score30High = currentScore + 12;
+    const score90Low = Math.min(95, currentScore + 15);
+    const score90High = Math.min(95, currentScore + 20);
+
+    let html = `
+<div class="section expected-results-section">
+  <div class="section-header" style="padding: 16pt 0 8pt 0;">
+    <h2>Expected Results After Implementing Recommendations</h2>
+    <p class="section-subtitle" style="color: #64748b; font-size: 9pt; margin: 0;">Projected improvements based on industry benchmarks for similar implementations</p>
+  </div>
+  <table class="results-table">
+    <thead>
+      <tr>
+        <th>Timeline</th>
+        <th>Metric</th>
+        <th>Current</th>
+        <th>Expected</th>
+        <th>Confidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>30 days</td>
+        <td>Overall SEO Score</td>
+        <td>${currentScore}</td>
+        <td>${score30Low}–${score30High}</td>
+        <td class="confidence-high">High</td>
+      </tr>
+      <tr>
+        <td>60 days</td>
+        <td>Organic Visibility</td>
+        <td>Baseline</td>
+        <td>+15–25%</td>
+        <td class="confidence-medium">Medium</td>
+      </tr>
+      <tr>
+        <td>90 days</td>
+        <td>Overall SEO Score</td>
+        <td>${currentScore}</td>
+        <td>${score90Low}–${score90High}</td>
+        <td class="confidence-medium">Medium</td>
+      </tr>
+      <tr>
+        <td>90 days</td>
+        <td>Page Load Speed</td>
+        <td>Varies</td>
+        <td>Top 25%</td>
+        <td class="confidence-medium">Medium</td>
+      </tr>
+      <tr>
+        <td>6 months</td>
+        <td>Domain Authority</td>
+        <td>Baseline</td>
+        <td>+5–10 pts</td>
+        <td class="confidence-low">Low</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="disclaimer">* Projections based on implementing all recommended changes. Actual results may vary based on competition, content quality, and implementation timing. SEO improvements typically show measurable impact within 60–90 days.</p>
+</div>
+`;
+    return html;
+  }
+
+  /**
+   * Build "Tools & Resources" section — reference table of recommended tools
+   */
+  buildToolsAndResources() {
+    return `
+<div class="section tools-section">
+  <div class="section-header" style="padding: 16pt 0 8pt 0;">
+    <h2>Recommended Tools &amp; Resources</h2>
+    <p class="section-subtitle" style="color: #64748b; font-size: 9pt; margin: 0;">Tools to help you implement and track these improvements</p>
+  </div>
+  <table class="tools-table">
+    <thead>
+      <tr>
+        <th>Tool</th>
+        <th>Purpose</th>
+        <th>Cost</th>
+        <th>Priority</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Google Search Console</strong></td>
+        <td>Monitor search performance, indexing issues, and manual actions</td>
+        <td>Free</td>
+        <td class="priority-high">Essential</td>
+      </tr>
+      <tr>
+        <td><strong>Google Analytics 4</strong></td>
+        <td>Track organic traffic, user behaviour, and conversions</td>
+        <td>Free</td>
+        <td class="priority-high">Essential</td>
+      </tr>
+      <tr>
+        <td><strong>Google PageSpeed Insights</strong></td>
+        <td>Measure Core Web Vitals and page performance</td>
+        <td>Free</td>
+        <td class="priority-high">Essential</td>
+      </tr>
+      <tr>
+        <td><strong>Screaming Frog SEO Spider</strong></td>
+        <td>Deep technical crawl — redirect chains, broken links, duplicate content</td>
+        <td>Free / £259/yr</td>
+        <td class="priority-med">Recommended</td>
+      </tr>
+      <tr>
+        <td><strong>Ahrefs / Semrush</strong></td>
+        <td>Keyword research, backlink analysis, competitor gap analysis</td>
+        <td>$99–$249/mo</td>
+        <td class="priority-med">Recommended</td>
+      </tr>
+      <tr>
+        <td><strong>Schema Markup Validator</strong></td>
+        <td>Test structured data at schema.org/validator</td>
+        <td>Free</td>
+        <td class="priority-med">Recommended</td>
+      </tr>
+      <tr>
+        <td><strong>Google Business Profile</strong></td>
+        <td>Manage local search presence and Google Maps listing</td>
+        <td>Free</td>
+        <td class="priority-high">Essential</td>
+      </tr>
+      <tr>
+        <td><strong>Yoast SEO / RankMath</strong></td>
+        <td>On-page SEO management (WordPress)</td>
+        <td>Free / $99/yr</td>
+        <td class="priority-low">Optional</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+  }
+
+  /**
+   * Build "Action Summary & Next Steps" closing section
+   */
+  buildActionSummary(auditData) {
+    const recommendations = auditData.recommendations || [];
+    const criticalCount = recommendations.filter(r => r.priority === 'CRITICAL').length;
+    const highCount = recommendations.filter(r => r.priority === 'HIGH').length;
+    const mediumCount = recommendations.filter(r => r.priority === 'MEDIUM').length;
+    const lowCount = recommendations.filter(r => r.priority === 'LOW').length;
+
+    const topItems = recommendations
+      .filter(r => r.priority === 'CRITICAL' || r.priority === 'HIGH')
+      .slice(0, 3);
+
+    const nextSteps = topItems.length >= 3
+      ? topItems
+      : [
+          ...topItems,
+          ...recommendations.filter(r => !topItems.includes(r)).slice(0, 3 - topItems.length)
+        ];
+
+    let stepsHtml = '';
+    for (const step of nextSteps.slice(0, 3)) {
+      stepsHtml += `<li>${this.escapeHTML(step.title)}${step.implementation ? ` — ${this.escapeHTML(this.truncate(step.implementation, 150))}` : ''}</li>\n`;
+    }
+
+    return `
+<div class="section action-summary-section page-break-before">
+  <div class="section-header dark-header">
+    <h2 style="color: white; border-bottom: none; margin: 0 0 6pt 0;">Action Summary &amp; Next Steps</h2>
+    <p class="section-subtitle" style="color: rgba(255,255,255,0.75); margin: 0;">A clear path forward to improve your search rankings</p>
+  </div>
+  <div class="action-body">
+    <div class="issue-tally">
+      <div class="tally-card critical">
+        <span class="tally-number">${criticalCount}</span>
+        <span class="tally-label">Critical</span>
+      </div>
+      <div class="tally-card high">
+        <span class="tally-number">${highCount}</span>
+        <span class="tally-label">High</span>
+      </div>
+      <div class="tally-card medium">
+        <span class="tally-number">${mediumCount}</span>
+        <span class="tally-label">Medium</span>
+      </div>
+      <div class="tally-card low">
+        <span class="tally-number">${lowCount}</span>
+        <span class="tally-label">Low</span>
+      </div>
+    </div>
+    <h3>Your Next 3 Steps</h3>
+    <ol class="next-steps">
+      ${stepsHtml}
+    </ol>
+    <div class="closing-note">
+      <p>SEO is a marathon, not a sprint. Addressing the critical and high-priority issues first will deliver the greatest impact in the shortest time. Consistent implementation over 90 days will compound into lasting improvements in organic visibility and qualified traffic.</p>
+    </div>
+  </div>
+</div>
+`;
   }
 }
 

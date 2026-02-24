@@ -35,6 +35,8 @@ class ContentQualityAnalyzer {
       this.checkReadability();
       this.checkFAQSections();
       this.checkMultimediaPresence();
+      this.checkEEATSignals();
+      this.checkBlogFeaturedOnHomepage();
 
       // Calculate category score
       const categoryScore = this.calculateScore();
@@ -74,6 +76,14 @@ class ContentQualityAnalyzer {
    * Check content volume (word count)
    */
   checkContentVolume() {
+    // Determine threshold based on page type
+    function getWordCountThreshold(url) {
+      const lower = (url || '').toLowerCase();
+      if (/\/(blog|article|post|news|guide|resource)s?\//.test(lower)) return 600;
+      if (/\/(service|product|solution|offering)s?\//.test(lower)) return 800;
+      return 300;
+    }
+
     const thinContent = [];
     const goodContent = [];
     let totalWords = 0;
@@ -82,13 +92,14 @@ class ContentQualityAnalyzer {
       const wordCount = page.wordCount || 0;
       totalWords += wordCount;
 
-      // Thin content: < 300 words
-      if (wordCount < 300 && page.path !== '/') {
+      const threshold = getWordCountThreshold(page.url);
+      if (wordCount < threshold && page.path !== '/') {
         thinContent.push({
           url: page.url,
-          wordCount
+          wordCount,
+          threshold
         });
-      } else if (wordCount >= 300) {
+      } else if (wordCount >= threshold) {
         goodContent.push(page.url);
       }
     }
@@ -119,13 +130,13 @@ class ContentQualityAnalyzer {
         type: 'thin_content',
         severity,
         title: 'Thin Content Issues',
-        description: `${thinContent.length} pages have less than 300 words. Thin content can negatively impact SEO.`,
-        recommendation: 'Expand content to at least 300-500 words per page. Add valuable, relevant information.',
+        description: `${thinContent.length} pages have less than their recommended minimum word count (blog: 600+, service: 800+, other: 300+). Thin content can negatively impact SEO rankings.`,
+        recommendation: 'Expand content to meet the recommended minimum for each page type. Add valuable, relevant information.',
         affectedPages: thinContent.length,
         examples: thinContent.slice(0, 5),
         evidence: thinContent.slice(0, 5).map(item => ({
           url: item.url,
-          detail: `${item.wordCount} words`
+          detail: `${item.wordCount} words (minimum: ${item.threshold})`
         }))
       });
     }
@@ -390,6 +401,104 @@ class ContentQualityAnalyzer {
   }
 
   /**
+   * Check E-E-A-T signals (Expertise, Experience, Authoritativeness, Trust)
+   */
+  checkEEATSignals() {
+    const pagesWithSignals = [];
+    const pagesLacking = [];
+
+    for (const page of this.pages) {
+      const wordCount = page.wordCount || 0;
+      const h2Tags = page.h2Tags || [];
+      const h3Tags = page.h3Tags || [];
+      const title = page.title || '';
+      const imageCount = page.imageCount || 0;
+
+      const allHeadings = [...h2Tags, ...h3Tags].join(' ').toLowerCase();
+
+      // Author signals: headings mentioning authorship
+      const authorSignals = /author|written by|by |about the author/.test(allHeadings);
+
+      // Date signals: title or headings contain a year or update/publish keywords
+      const combinedText = (title + ' ' + allHeadings).toLowerCase();
+      const dateSignals = /20(2[0-9]|[3-9]\d)|updated|published/.test(combinedText);
+
+      // Citation signals: substantial content with supporting media
+      const citationSignals = wordCount > 600 && imageCount > 0;
+
+      const hasSignals = authorSignals || dateSignals || citationSignals;
+
+      if (hasSignals) {
+        pagesWithSignals.push(page);
+      } else if (wordCount > 400) {
+        pagesLacking.push({ url: page.url, wordCount });
+      }
+    }
+
+    this.checks.eeatSignals = {
+      totalPages: this.pages.length,
+      pagesWithSignals: pagesWithSignals.length,
+      pagesLackingSignals: pagesLacking.length,
+      status: pagesLacking.length === 0 ? 'pass' : 'warning'
+    };
+
+    if (pagesLacking.length > 0) {
+      this.issues.push({
+        type: 'weak_eeat_signals',
+        severity: 'medium',
+        title: 'Weak E-E-A-T Signals',
+        description: `${pagesLacking.length} substantial page(s) lack visible credibility signals such as author attribution, publication dates, or supporting media. Google's E-E-A-T guidelines reward demonstrable expertise.`,
+        recommendation: 'Add author bylines, publication/update dates, and supporting images or citations to key content pages. Consider adding an "About the Author" section.',
+        affectedPages: pagesLacking.length,
+        examples: pagesLacking.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words, no author/date signals` }))
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      pagesWithSignals: pagesWithSignals.length,
+      pagesLackingSignals: pagesLacking.length
+    }, 'E-E-A-T signals checked');
+  }
+
+  /**
+   * Check whether blog content is featured on the homepage
+   */
+  checkBlogFeaturedOnHomepage() {
+    const blogPages = this.pages.filter(p =>
+      /\/(blog|article|post|news)s?\//i.test(p.url || '')
+    );
+
+    const homepage = this.pages.find(p =>
+      p.path === '/' ||
+      (p.url || '').replace(/^https?:\/\/[^/]+/, '') === ''
+    );
+
+    this.checks.blogFeaturedOnHomepage = {
+      blogPagesFound: blogPages.length,
+      homepageFound: !!homepage,
+      status: (blogPages.length === 0 || !homepage || (homepage.h2Tags?.length ?? 0) >= 2) ? 'pass' : 'warning'
+    };
+
+    if (blogPages.length >= 3 && (!homepage || (homepage.h2Tags?.length ?? 0) < 2)) {
+      this.issues.push({
+        type: 'blog_not_featured_on_homepage',
+        severity: 'low',
+        title: 'Blog Content Not Featured on Homepage',
+        description: `${blogPages.length} blog pages were found but the homepage does not appear to surface recent blog content. Featuring blog content on the homepage improves engagement and internal linking.`,
+        recommendation: 'Add a "Recent Posts" or "Latest Articles" section to the homepage with links to your 3-5 most recent blog posts.',
+        affectedPages: 1
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      blogPagesFound: blogPages.length,
+      homepageFound: !!homepage
+    }, 'Blog featured on homepage checked');
+  }
+
+  /**
    * Calculate Content Quality score
    * More conservative scoring to match professional SEO tools
    */
@@ -398,8 +507,9 @@ class ContentQualityAnalyzer {
       contentVolume: 35,
       keywordCannibalization: 25, // Increased from 20 - this is critical
       readability: 20,
-      faqSections: 10,
-      multimediaPresence: 10 // Reduced from 15
+      faqSections: 5, // Reduced from 10 to accommodate eeatSignals
+      multimediaPresence: 5, // Reduced from 10 to accommodate eeatSignals
+      eeatSignals: 10
     };
 
     let totalScore = 0;
@@ -448,6 +558,17 @@ class ContentQualityAnalyzer {
 
       totalScore += score * weights.multimediaPresence;
       totalWeight += weights.multimediaPresence;
+    }
+
+    // E-E-A-T signals score
+    if (this.checks.eeatSignals) {
+      const { pagesLackingSignals, totalPages } = this.checks.eeatSignals;
+      const score = pagesLackingSignals === 0
+        ? 100
+        : Math.max(0, 100 - (pagesLackingSignals / (totalPages || 1)) * 100);
+
+      totalScore += score * weights.eeatSignals;
+      totalWeight += weights.eeatSignals;
     }
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;

@@ -200,19 +200,19 @@ async function processAudit(job) {
         let phase = 'short-term';
 
         // Quick wins (< 2 hours)
-        if (['missing_sitemap', 'missing_robots', 'robots_missing_sitemap', 'enable_compression', 'use_webp', 'no_google_maps', 'no_location_in_title'].includes(issue.type)) {
+        if (['missing_sitemap', 'missing_robots', 'robots_missing_sitemap', 'enable_compression', 'use_webp', 'no_google_maps', 'no_location_in_title', 'no_trust_badges', 'trailing_slash_inconsistency', 'trust_badges_missing_from_homepage'].includes(issue.type)) {
           effortLevel = 'QUICK_WIN';
           estimatedHours = 1;
           phase = 'quick-wins';
         }
         // Moderate effort (2-8 hours)
-        else if (['missing_ssl', 'missing_meta_descriptions', 'missing_h1', 'unoptimized_images', 'unused_css', 'missing_privacy_policy', 'missing_contact_page', 'missing_local_business_schema', 'incomplete_nap'].includes(issue.type)) {
+        else if (['missing_ssl', 'missing_meta_descriptions', 'missing_h1', 'unoptimized_images', 'unused_css', 'missing_privacy_policy', 'missing_contact_page', 'missing_local_business_schema', 'incomplete_nap', 'thin_content', 'thin_content_blog', 'thin_content_service', 'weak_eeat_signals', 'js_dependent_content', 'blog_not_featured_on_homepage', 'no_faq_sections'].includes(issue.type)) {
           effortLevel = 'MODERATE';
           estimatedHours = 3;
           phase = 'short-term';
         }
         // Substantial effort (8+ hours)
-        else if (['mobile_not_optimized', 'duplicate_title_tags', 'duplicate_meta_descriptions', 'poor_mobile_performance', 'poor_lcp', 'no_social_media', 'inconsistent_phone', 'inconsistent_address'].includes(issue.type)) {
+        else if (['mobile_not_optimized', 'duplicate_title_tags', 'duplicate_meta_descriptions', 'poor_mobile_performance', 'poor_lcp', 'no_social_media', 'inconsistent_phone', 'inconsistent_address', 'keyword_cannibalization', 'low_avg_word_count'].includes(issue.type)) {
           effortLevel = 'SUBSTANTIAL';
           estimatedHours = 12;
           phase = 'medium-term';
