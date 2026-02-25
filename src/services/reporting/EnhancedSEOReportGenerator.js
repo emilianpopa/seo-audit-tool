@@ -1543,6 +1543,9 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     for (const result of (this.audit.results || [])) {
       if (result.categoryScore >= 75 && strengths.length < 9) {
         const cat = this.formatCategoryName(result.category);
+        // Skip generic ON_PAGE_SEO and CONTENT_QUALITY score fillers — not meaningful qualitative strengths
+        const isGenericFiller = result.category === 'ON_PAGE_SEO' || result.category === 'CONTENT_QUALITY';
+        if (isGenericFiller && !(strengths.length < 3 && result.categoryScore > 85)) continue;
         // Avoid duplicating a strength already added from check data
         const alreadyCovered = strengths.some(s =>
           (result.category === 'TECHNICAL_SEO' && s.title.includes('SSL')) ||
@@ -1587,9 +1590,9 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
 
       // Extract a memorable quote from the page body using plain-text sentence matching
       let quote = '';
-      if (homepage.html) {
+      if (homepage.htmlSnapshot) {
         // Strip HTML tags and collapse whitespace to get plain text
-        const plainText = homepage.html
+        const plainText = homepage.htmlSnapshot
           .replace(/<script[\s\S]*?<\/script>/gi, '')
           .replace(/<style[\s\S]*?<\/style>/gi, '')
           .replace(/<[^>]+>/g, ' ')
@@ -1647,8 +1650,8 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       /testimonial|case stud|client success|customer story/i.test(p.title || '')
     );
     // Also check homepage HTML for testimonial content
-    const homepageHasTestimonials = homepage && homepage.html &&
-      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.html);
+    const homepageHasTestimonials = homepage && homepage.htmlSnapshot &&
+      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.htmlSnapshot);
 
     if ((trustPages.length > 0 || homepageHasTestimonials) && strengths.length < 10) {
       const source = trustPages.length > 0
@@ -1675,13 +1678,13 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     }
 
     // Multiple conversion points (CTAs, forms, newsletter signup)
-    if (homepage && homepage.html && strengths.length < 10) {
+    if (homepage && homepage.htmlSnapshot && strengths.length < 10) {
       const ctaSignals = [
-        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.html),
-        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.html),
-        /<form[\s>]/i.test(homepage.html),
-        /newsletter|subscribe/i.test(homepage.html),
-        /contact.?us|get.?in.?touch/i.test(homepage.html)
+        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.htmlSnapshot),
+        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.htmlSnapshot),
+        /<form[\s>]/i.test(homepage.htmlSnapshot),
+        /newsletter|subscribe/i.test(homepage.htmlSnapshot),
+        /contact.?us|get.?in.?touch/i.test(homepage.htmlSnapshot)
       ].filter(Boolean).length;
 
       if (ctaSignals >= 2) {
