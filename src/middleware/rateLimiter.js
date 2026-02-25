@@ -1,82 +1,85 @@
 /**
  * Rate Limiting Middleware
  *
- * Protects API endpoints from abuse and excessive requests
+ * Redis-backed distributed rate limiter. Works correctly across multiple
+ * instances (Railway horizontal scaling). Falls back to fail-open if Redis
+ * is unavailable so a Redis outage never takes down the API.
  */
 
-const rateLimiters = new Map();
+import redis from '../config/redis.js';
+import logger from '../config/logger.js';
+
+// Lua script: atomic INCR + conditional PEXPIRE + TTL read in one round-trip
+// Returns [count, pttl_remaining]
+const RATE_LIMIT_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('PTTL', KEYS[1])
+return {count, ttl}
+`;
 
 /**
- * Simple in-memory rate limiter
- * @param {Object} options - Rate limiter options
- * @param {number} options.windowMs - Time window in milliseconds
- * @param {number} options.max - Max requests per window
- * @param {string} options.message - Error message when limit exceeded
+ * Create a Redis-backed rate limiter middleware
+ * @param {Object} options
+ * @param {number} options.windowMs  - Window length in ms
+ * @param {number} options.max       - Max requests per window
+ * @param {string} options.message   - Message when limit exceeded
+ * @param {string} options.prefix    - Redis key prefix
+ * @param {Function} options.keyGenerator - Function(req) → string key
  */
 export function createRateLimiter(options = {}) {
   const {
-    windowMs = 60000, // 1 minute default
-    max = 10, // 10 requests per minute default
+    windowMs = 60000,
+    max = 10,
     message = 'Too many requests, please try again later.',
+    prefix = 'rl:',
     keyGenerator = (req) => req.ip || 'anonymous'
   } = options;
 
-  return (req, res, next) => {
-    const key = keyGenerator(req);
+  return async (req, res, next) => {
+    const clientKey = `${prefix}${keyGenerator(req)}`;
     const now = Date.now();
 
-    // Get or create rate limit data for this key
-    if (!rateLimiters.has(key)) {
-      rateLimiters.set(key, {
-        count: 0,
-        resetTime: now + windowMs
-      });
+    try {
+      const [count, ttl] = await redis.eval(RATE_LIMIT_SCRIPT, 1, clientKey, windowMs.toString());
+      const resetTime = now + (ttl > 0 ? ttl : windowMs);
+
+      res.setHeader('X-RateLimit-Limit', max);
+      res.setHeader('X-RateLimit-Remaining', Math.max(0, max - count));
+      res.setHeader('X-RateLimit-Reset', new Date(resetTime).toISOString());
+
+      if (count > max) {
+        return res.status(429).json({
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message,
+            retryAfter: Math.ceil((ttl > 0 ? ttl : windowMs) / 1000)
+          }
+        });
+      }
+
+      next();
+    } catch (err) {
+      // Redis unavailable — fail open so a cache outage doesn't kill the API
+      logger.warn({ err: err.message, key: clientKey }, 'Rate limiter Redis error - failing open');
+      next();
     }
-
-    const limiter = rateLimiters.get(key);
-
-    // Reset if window has passed
-    if (now > limiter.resetTime) {
-      limiter.count = 0;
-      limiter.resetTime = now + windowMs;
-    }
-
-    // Increment request count
-    limiter.count++;
-
-    // Set rate limit headers
-    res.setHeader('X-RateLimit-Limit', max);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - limiter.count));
-    res.setHeader('X-RateLimit-Reset', new Date(limiter.resetTime).toISOString());
-
-    // Check if limit exceeded
-    if (limiter.count > max) {
-      return res.status(429).json({
-        success: false,
-        error: {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message,
-          retryAfter: Math.ceil((limiter.resetTime - now) / 1000) // seconds
-        }
-      });
-    }
-
-    next();
   };
 }
 
 /**
  * Audit creation rate limiter
- * Limit: 50 audits per hour per IP (configurable via env)
+ * Limit: 50 audits per hour per IP/user (configurable via env)
  */
 export const auditCreationLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: parseInt(process.env.AUDIT_CREATION_LIMIT || '50'),
   message: 'Too many audit requests. Please try again later.',
-  keyGenerator: (req) => {
-    // Use user ID if authenticated, otherwise IP
-    return req.user?.id || req.ip || 'anonymous';
-  }
+  prefix: 'rl:audit:',
+  keyGenerator: (req) => req.user?.id || req.ip || 'anonymous'
 });
 
 /**
@@ -86,7 +89,8 @@ export const auditCreationLimiter = createRateLimiter({
 export const apiLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.API_RATE_LIMIT || '200'),
-  message: 'Too many requests from this IP. Please try again later.'
+  message: 'Too many requests from this IP. Please try again later.',
+  prefix: 'rl:api:'
 });
 
 /**
@@ -96,21 +100,6 @@ export const apiLimiter = createRateLimiter({
 export const reportDownloadLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: parseInt(process.env.REPORT_DOWNLOAD_LIMIT || '50'),
-  message: 'Too many report downloads. Please try again later.'
+  message: 'Too many report downloads. Please try again later.',
+  prefix: 'rl:report:'
 });
-
-/**
- * Cleanup old rate limit entries (run periodically)
- */
-export function cleanupRateLimiters() {
-  const now = Date.now();
-  for (const [key, limiter] of rateLimiters.entries()) {
-    // Remove entries that are older than 2x their reset time
-    if (now > limiter.resetTime + (limiter.resetTime - (now - 60000))) {
-      rateLimiters.delete(key);
-    }
-  }
-}
-
-// Run cleanup every 5 minutes
-setInterval(cleanupRateLimiters, 5 * 60 * 1000);

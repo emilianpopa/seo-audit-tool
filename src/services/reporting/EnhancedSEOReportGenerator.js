@@ -6,13 +6,10 @@ import prisma from '../../config/database.js';
 import logger from '../../config/logger.js';
 
 function findChromiumExecutable() {
-  // 1. Explicit env var (highest priority — set in Railway dashboard)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     logger.info({ path: process.env.PUPPETEER_EXECUTABLE_PATH }, 'Chromium: using PUPPETEER_EXECUTABLE_PATH');
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
-
-  // 2. Path captured during nixpacks build phase (which chromium → /app/.chromium-path)
   try {
     const buildCapturedPath = fs.readFileSync('/app/.chromium-path', 'utf-8').trim();
     if (buildCapturedPath && fs.existsSync(buildCapturedPath)) {
@@ -20,8 +17,6 @@ function findChromiumExecutable() {
       return buildCapturedPath;
     }
   } catch {}
-
-  // 3. Puppeteer's own bundled Chrome (downloaded during npm install)
   try {
     const bundled = puppeteerBundledPath();
     if (bundled && fs.existsSync(bundled)) {
@@ -29,8 +24,6 @@ function findChromiumExecutable() {
       return bundled;
     }
   } catch {}
-
-  // 4. Runtime which chromium (last resort)
   try {
     const found = execSync(
       'which chromium || which chromium-browser || which google-chrome-stable || which google-chrome',
@@ -41,7 +34,6 @@ function findChromiumExecutable() {
       return found;
     }
   } catch {}
-
   logger.warn('Chromium: no executable found — puppeteer will use its default');
   return null;
 }
@@ -50,8 +42,6 @@ function findChromiumExecutable() {
  * Enhanced SEO Report Generator
  *
  * Generates detailed PDF reports using HTML/CSS + Puppeteer.
- * Replaces the previous PDFKit implementation which produced blank pages
- * due to manual doc.addPage() calls. HTML/CSS pagination is automatic.
  */
 class EnhancedSEOReportGenerator {
   constructor(auditId) {
@@ -99,7 +89,6 @@ class EnhancedSEOReportGenerator {
     const template = fs.readFileSync(this.templatePath, 'utf-8');
     const fullHTML = template.replace('{{content}}', htmlContent);
 
-    // Save HTML for debugging
     const htmlDebugPath = filepath.replace('.pdf', '.html');
     fs.writeFileSync(htmlDebugPath, fullHTML);
     logger.info({ htmlDebugPath }, 'Saved HTML debug file');
@@ -117,9 +106,7 @@ class EnhancedSEOReportGenerator {
         '--disable-software-rasterizer'
       ]
     };
-    if (chromiumPath) {
-      launchOptions.executablePath = chromiumPath;
-    }
+    if (chromiumPath) launchOptions.executablePath = chromiumPath;
 
     let browser;
     try {
@@ -133,7 +120,6 @@ class EnhancedSEOReportGenerator {
       const page = await browser.newPage();
       await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
       await page.setContent(fullHTML, { waitUntil: 'networkidle0', timeout: 30000 });
-
       await page.pdf({
         path: filepath,
         format: 'A4',
@@ -160,7 +146,10 @@ class EnhancedSEOReportGenerator {
     sections.push(this.buildWhatNotWorking());
     sections.push('<div class="page-break"></div>');
     sections.push(this.buildWhatIsWorking());
+    sections.push('<div class="page-break"></div>');
     sections.push(this.buildWhatNeedsChange());
+    sections.push('<div class="page-break"></div>');
+    sections.push(this.buildOtherImprovements());
     sections.push('<div class="page-break"></div>');
     sections.push(this.buildRoadmap());
     sections.push('<div class="page-break"></div>');
@@ -252,34 +241,22 @@ class EnhancedSEOReportGenerator {
   }
 
   buildWhatNotWorking() {
-    const categories = {
-      'TECHNICAL_SEO': 'A. Technical SEO',
-      'ON_PAGE_SEO': 'B. On-Page SEO',
-      'CONTENT_QUALITY': 'C. Content Quality',
-      'AUTHORITY_BACKLINKS': 'D. Authority & Local SEO',
-      'LOCAL_SEO': 'D. Authority & Local SEO',
-      'PERFORMANCE': 'E. Performance'
-    };
+    const categoryGroups = [
+      { keys: ['TECHNICAL_SEO'],            title: 'A. Technical SEO' },
+      { keys: ['ON_PAGE_SEO'],              title: 'B. On-Page SEO' },
+      { keys: ['CONTENT_QUALITY'],          title: 'C. Content Quality' },
+      { keys: ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'], title: 'D. Authority & Local SEO' },
+      { keys: ['PERFORMANCE'],              title: 'E. Performance' },
+    ];
 
     let html = `<h1>2. What Is NOT Working</h1>
 <p>Issues identified during the audit, grouped by category. Each includes specific evidence and recommended fix.</p>`;
 
-    const seen = new Set();
-    for (const [categoryKey, categoryTitle] of Object.entries(categories)) {
-      if (seen.has(categoryTitle)) continue;
-      seen.add(categoryTitle);
-
-      const keys = Object.entries(categories)
-        .filter(([, t]) => t === categoryTitle)
-        .map(([k]) => k);
-
-      const issues = this.audit.recommendations
-        .filter(r => keys.includes(r.category))
-        .slice(0, 2);
-
+    for (const group of categoryGroups) {
+      const issues = this.audit.recommendations.filter(r => group.keys.includes(r.category));
       if (issues.length === 0) continue;
 
-      html += `<h2>${this.escapeHTML(categoryTitle)}</h2>`;
+      html += `<h2>${this.escapeHTML(group.title)}</h2>`;
       for (const issue of issues) {
         html += this.buildIssueCard(issue);
       }
@@ -290,21 +267,45 @@ class EnhancedSEOReportGenerator {
 
   buildIssueCard(issue) {
     const severity = issue.priority.toLowerCase();
+    const affectedPagesHtml = issue.affectedPages > 0
+      ? `<div class="text-sm text-gray">Affected pages: ${issue.affectedPages}</div>`
+      : '';
+    const fixHtml = issue.implementation
+      ? `<div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(issue.implementation)}</div>`
+      : '';
+    const impactHtml = issue.expectedImpact
+      ? `<div class="issue-impact">Impact: ${this.escapeHTML(issue.expectedImpact)}</div>`
+      : '';
+
+    const steps = this.getImplementationSteps(issue.title);
+    const stepsHtml = steps.length > 0
+      ? `<div class="issue-steps"><strong>Implementation Steps:</strong><ul class="steps-list">${
+          steps.map(s => `<li>${this.escapeHTML(s)}</li>`).join('')
+        }</ul></div>`
+      : '';
+
+    const specifics = this.getSpecificsForIssue(issue.title);
+    const specificsHtml = specifics.length > 0
+      ? this.buildSpecificsTable(specifics, 4)
+      : '';
+
     return `
 <div class="issue-card ${severity}">
   <div class="issue-header">
-    <span class="issue-title">${this.escapeHTML(this.truncate(issue.title, 80))}</span>
+    <span class="issue-title">${this.escapeHTML(issue.title)}</span>
     <span class="issue-severity ${severity}">${issue.priority}</span>
   </div>
-  <div class="issue-description">${this.escapeHTML(this.truncate(issue.description, 250))}</div>
-  ${issue.affectedPages > 0 ? `<div class="text-sm text-gray">Affected pages: ${issue.affectedPages}</div>` : ''}
-  ${issue.implementation ? `<div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(this.truncate(issue.implementation, 200))}</div>` : ''}
-  ${issue.expectedImpact ? `<div class="issue-impact">Impact: ${this.escapeHTML(this.truncate(issue.expectedImpact, 150))}</div>` : ''}
+  <div class="issue-description">${this.escapeHTML(issue.description)}</div>
+  ${affectedPagesHtml}
+  ${fixHtml}
+  ${stepsHtml}
+  ${specificsHtml}
+  ${impactHtml}
 </div>`;
   }
 
   buildWhatIsWorking() {
-    const strengths = this.identifyStrengths().slice(0, 4);
+    const strengths = this.identifyStrengths();
 
     let html = `<h1>3. What IS Working</h1>
 <p>Strengths to preserve as you implement improvements.</p>`;
@@ -313,7 +314,8 @@ class EnhancedSEOReportGenerator {
       html += `
 <div class="success-box mt-2">
   <strong>&#10003; ${this.escapeHTML(s.title)}</strong><br/>
-  <span class="text-sm">${this.escapeHTML(this.truncate(s.description, 150))}</span>
+  <span class="text-sm">${this.escapeHTML(s.description)}</span>
+  ${s.preserve ? `<br/><span class="text-sm preserve-note"><span class="preserve-label">Preserve:</span> ${this.escapeHTML(s.preserve)}</span>` : ''}
 </div>`;
     }
 
@@ -328,9 +330,21 @@ class EnhancedSEOReportGenerator {
       MEDIUM: 'Medium Priority (Fix Within 2 Months)',
       LOW: 'Low Priority (Fix As Capacity Allows)'
     };
+    const timeframes = {
+      CRITICAL: '1–2 weeks',
+      HIGH: '2–4 weeks',
+      MEDIUM: '4–6 weeks',
+      LOW: '6–8 weeks'
+    };
+    const impactRanges = {
+      CRITICAL: '+15–20 points',
+      HIGH: '+10–15 points',
+      MEDIUM: '+5–10 points',
+      LOW: '+2–5 points'
+    };
     const colors = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
 
-    let html = `<div class="page-break"></div><h1>4. What Needs to Change</h1>
+    let html = `<h1>4. What Needs to Change</h1>
 <p>Prioritised fixes. Implementing Critical + High priority items will yield the most significant score improvement.</p>
 
 <div class="priority-grid">`;
@@ -347,94 +361,509 @@ class EnhancedSEOReportGenerator {
 
     html += `</div>`;
 
-    // Top 6 fixes (max 2 per priority level that has issues)
-    const fixesToShow = [];
+    // Fix Priority Matrix table
+    html += `<table class="fix-matrix">
+  <thead><tr><th>Priority</th><th># of Issues</th><th>Est. Time</th><th>Impact on Score</th></tr></thead>
+  <tbody>`;
     for (const p of priorities) {
-      const group = this.audit.recommendations.filter(r => r.priority === p).slice(0, 2);
-      fixesToShow.push(...group);
-      if (fixesToShow.length >= 6) break;
+      const count = this.audit.recommendations.filter(r => r.priority === p).length;
+      html += `<tr>
+    <td class="color-${colors[p]} font-semibold">${p}</td>
+    <td>${count}</td>
+    <td>${timeframes[p]}</td>
+    <td>${impactRanges[p]}</td>
+  </tr>`;
     }
+    html += `</tbody></table>`;
 
     html += `<h2>Detailed Fixes</h2>`;
-    for (const fix of fixesToShow.slice(0, 6)) {
-      html += this.buildIssueCard(fix);
+    for (const p of priorities) {
+      const group = this.audit.recommendations.filter(r => r.priority === p);
+      for (const fix of group) {
+        html += this.buildIssueCard(fix);
+      }
+    }
+
+    // Keyword & Content Optimization sub-section
+    const kwSection = this.buildKeywordOptimization();
+    if (kwSection) {
+      html += `<div class="page-break"></div>` + kwSection;
     }
 
     return html;
   }
 
+  buildOtherImprovements() {
+    const domain = new URL(this.audit.targetUrl).hostname.replace('www.', '');
+
+    const categories = [
+      {
+        title: 'A. UX/UI Improvements',
+        items: [
+          {
+            title: 'Sticky Navigation Bar',
+            desc: 'Add a sticky header so your CTA buttons remain accessible as users scroll down. This keeps your primary conversion point visible at all times.',
+            impact: 'Increase conversions by 10–15%'
+          },
+          {
+            title: 'Mobile Navigation Optimisation',
+            desc: 'Ensure the hamburger menu has a large enough tap target (min 44×44px). Consider a persistent mobile CTA bar pinned to the bottom of the screen.',
+            impact: 'Reduce mobile bounce rate by 5–8%'
+          },
+          {
+            title: 'Visual Hierarchy Enhancement',
+            desc: 'Use larger, bolder typography for key statistics and outcomes. Add subtle animations or counters to make impact numbers (e.g. "19% decrease in turnover") stand out.',
+            impact: 'Increase average engagement time by 20–30 seconds'
+          },
+          {
+            title: 'Interactive Product Demo or Tour',
+            desc: 'Embed a "See How It Works" video or interactive walkthrough above the fold on the homepage. First-time visitors convert significantly better when they can preview the product experience.',
+            impact: 'Increase trial sign-ups by 15–25%'
+          },
+          {
+            title: 'Progress Indicators on Multi-Step Forms',
+            desc: 'If any sign-up or contact forms span multiple steps, show a progress indicator (Step 1 of 3). This reduces form abandonment substantially.',
+            impact: 'Increase form completion rate by 12–18%'
+          },
+          {
+            title: 'Live Chat Widget',
+            desc: 'Add a lightweight chat widget (e.g. Intercom, Crisp, or Tidio) to answer common pre-sales questions in real time without requiring a demo booking.',
+            impact: 'Increase qualified lead conversion by 8–12%'
+          },
+          {
+            title: 'Accessibility Audit (WCAG 2.1 AA)',
+            desc: 'Run a WAVE or axe audit to check colour contrast ratios, keyboard navigation, and ARIA labels. Compliance broadens your audience and reduces legal risk.',
+            impact: 'Expand addressable market by 15–20%'
+          },
+        ]
+      },
+      {
+        title: 'B. Conversion Rate Optimisation (CRO)',
+        items: [
+          {
+            title: 'A/B Test Primary CTA Copy & Colour',
+            desc: 'Run split tests on your primary call-to-action: "Get Started Free" vs "See It in Action" vs "Start Free Trial". Also test button colour — orange and green often outperform blue.',
+            impact: 'Increase CTA click-through rate by 15–30%'
+          },
+          {
+            title: 'Exit-Intent Popup with Lead Magnet',
+            desc: 'When a user\'s mouse moves toward the browser chrome, trigger a popup offering a free resource (e.g. "Free Skills Gap Assessment Guide"). Capture emails you would otherwise lose.',
+            impact: 'Capture 5–10% of abandoning visitors'
+          },
+          {
+            title: 'Social Proof Notifications',
+            desc: 'Show real-time or recent activity notifications ("A team at [Company] just started their free trial") using tools like Proof or TrustPulse. Display non-intrusively at the bottom of the page.',
+            impact: 'Boost conversions by 8–12% through trust reinforcement'
+          },
+          {
+            title: 'Dedicated PPC Landing Pages',
+            desc: 'Build focused landing pages for each paid ad campaign — no navigation, single CTA, copy matching the ad. One message, one goal per page dramatically improves Quality Score.',
+            impact: 'Increase paid traffic conversion rate by 25–40%'
+          },
+          {
+            title: 'ROI Calculator',
+            desc: 'Add an interactive calculator: "See how much our solution could save your organisation" (inputs: number of employees, current training cost). Embed on the homepage or pricing page.',
+            impact: 'Increase qualified leads by 20–30%'
+          },
+          {
+            title: 'Optimise Form Field Count',
+            desc: 'Reduce sign-up forms to 3 fields maximum (Name, Email, Company). Capture additional details post sign-up or during onboarding rather than at the point of first contact.',
+            impact: 'Increase form submissions by 15–25%'
+          },
+          {
+            title: 'Scarcity or Urgency Elements',
+            desc: 'Where authentic, add limited-time offers or cohort-based enrolment messaging. Countdown timers and "limited spots" copy create urgency without feeling misleading.',
+            impact: 'Increase conversions by 10–15%'
+          },
+          {
+            title: 'Retargeting Pixel Setup',
+            desc: 'Install Meta Pixel and Google Ads remarketing tags to retarget visitors who didn\'t convert. Build custom audiences segmented by pages visited (e.g. pricing page visitors).',
+            impact: 'Increase conversion rate of paid traffic by 30–50%'
+          },
+        ]
+      },
+      {
+        title: 'C. Content Strategy & Marketing',
+        items: [
+          {
+            title: 'Launch an Ultimate Guides Hub',
+            desc: 'Create 5–8 comprehensive guides (3,000–5,000 words each). Topics: "The Complete Guide to Closing Skills Gaps", "AI in Workforce Development", "Career Pathing Best Practices". Gate behind email capture.',
+            impact: 'Generate 100–200 qualified leads per month from organic search'
+          },
+          {
+            title: 'Weekly LinkedIn Newsletter',
+            desc: 'Publish a weekly newsletter on LinkedIn ("Future of Work Insights"). Share industry trends, platform updates, and customer success stories. Repurpose existing blog content.',
+            impact: 'Build authority and brand awareness; target 1,000 subscribers in 90 days'
+          },
+          {
+            title: 'Video Content Series',
+            desc: 'Launch a YouTube series (weekly 5–10 min videos): platform demos, customer interviews, expert roundtables. Embed videos on relevant website pages and optimise with transcripts.',
+            impact: 'Improve dwell time and E-E-A-T signals; target 500+ views/month'
+          },
+          {
+            title: 'Case Study Library',
+            desc: 'Create 5–10 detailed case studies following Challenge → Solution → Results format with specific metrics. Include quotes, photos, and video testimonials where possible.',
+            impact: 'Shorten sales cycle by 20–30%; increase trust signals'
+          },
+          {
+            title: 'Guest Blogging Campaign',
+            desc: 'Target 10–15 high-authority HR and EdTech publications. Write on topics aligned with your expertise. Include an author bio linking back to the site. Aim for 2–3 posts per month.',
+            impact: 'Build backlinks and domain authority; reach new audiences'
+          },
+          {
+            title: 'Monthly Webinar Series',
+            desc: 'Host monthly webinars on workforce development best practices. Co-host with industry partners or existing customers. Repurpose recordings into blog posts, social clips, and lead magnets.',
+            impact: 'Generate 50–100 qualified leads per webinar'
+          },
+          {
+            title: 'Expand Blog Content Depth',
+            desc: 'Audit existing blog posts under 1,000 words and expand them to 1,500–2,500 words with data, examples, and internal links. Update older posts with current statistics and fresh CTAs.',
+            impact: 'Improve rankings for existing content; +20–40% organic traffic to updated posts'
+          },
+        ]
+      },
+      {
+        title: 'D. Technical & Performance Optimisations',
+        items: [
+          {
+            title: 'Implement Advanced Caching',
+            desc: 'Set up full-page caching (WP Rocket, LiteSpeed Cache, or server-level Varnish), browser caching with 1-year expiry for static assets, and object caching for database queries.',
+            impact: 'Reduce server load by 40–60%; improve Time to First Byte (TTFB)'
+          },
+          {
+            title: 'CDN for All Static Assets',
+            desc: 'Serve images, CSS, JS, and fonts via a CDN (Cloudflare, AWS CloudFront, or Fastly). This dramatically reduces latency for visitors outside your server\'s region.',
+            impact: 'Reduce global load times by 30–50%'
+          },
+          {
+            title: 'Full Image Optimisation Pipeline',
+            desc: 'Convert all images to WebP format with JPEG/PNG fallbacks. Implement lazy loading (loading="lazy") and responsive images with srcset. Right-size images at upload time.',
+            impact: 'Reduce page weight by 50–70%; improve Largest Contentful Paint (LCP)'
+          },
+          {
+            title: 'Database Optimisation',
+            desc: 'Regularly clean up post revisions (keep max 3), spam comments, and expired transients. Run OPTIMIZE TABLE queries monthly. Adds up significantly for long-running CMS sites.',
+            impact: 'Reduce database query time by 30–40%'
+          },
+          {
+            title: 'Enable HTTP/2 or HTTP/3',
+            desc: 'Ensure your server supports HTTP/2 (multiplexed connections) or HTTP/3 (QUIC). Most modern hosting and CDN providers support this — verify it\'s enabled for your domain.',
+            impact: 'Improve parallel asset loading; reduce latency by 20–30%'
+          },
+          {
+            title: 'Security Hardening',
+            desc: 'Install a security plugin (Wordfence, Sucuri, or Cloudflare WAF), enable 2FA for admin accounts, hide CMS version strings, and limit login attempts. Security breaches directly harm SEO rankings.',
+            impact: 'Prevent security breaches; protect organic rankings and user trust'
+          },
+          {
+            title: 'Monitoring & Alerting Setup',
+            desc: 'Configure uptime monitoring (UptimeRobot or Better Uptime), Google Search Console email alerts for crawl errors, and weekly PageSpeed score tracking. Catch regressions before they compound.',
+            impact: 'Catch and fix issues before they impact users or rankings'
+          },
+          {
+            title: 'Structured Error Logging',
+            desc: 'Implement application error logging with Sentry or LogRocket. Track 404s, form submission failures, and failed API calls. Reduces debugging time and improves reliability.',
+            impact: 'Faster issue resolution; reduce user-facing errors'
+          },
+        ]
+      },
+      {
+        title: 'E. Analytics & Tracking Improvements',
+        items: [
+          {
+            title: 'Google Analytics 4 Full Configuration',
+            desc: 'Ensure GA4 is fully configured with conversion events (form submissions, demo requests, newsletter sign-ups, pricing page visits). Set up Audiences for remarketing segments.',
+            impact: 'Accurate attribution; identify highest-value traffic sources'
+          },
+          {
+            title: 'Heatmaps & Session Recording',
+            desc: 'Install Hotjar or Microsoft Clarity (free) to record user sessions and view heatmaps. Identify where users click, where they stop scrolling, and where they get confused.',
+            impact: 'Identify UX issues; optimise conversion paths based on real behaviour'
+          },
+          {
+            title: 'Goal Funnel Tracking',
+            desc: 'Define your conversion funnel in GA4: Homepage → Key Service Page → Pricing/Demo → Thank You. Set up funnel exploration reports to identify drop-off points.',
+            impact: 'Increase conversion rate by 15–25% through data-driven funnel fixes'
+          },
+          {
+            title: 'Call & Form Tracking',
+            desc: 'If phone leads are important, use CallRail or WhatConverts to track which marketing channels drive calls. Integrate with GA4 as a conversion event for full attribution.',
+            impact: 'Attribute offline conversions; optimise marketing spend accurately'
+          },
+          {
+            title: 'A/B Testing Programme',
+            desc: 'Set up Google Optimize (free) or VWO for continuous A/B testing of headlines, CTAs, hero images, and page layouts. Run one test at a time with proper statistical significance.',
+            impact: 'Compound conversion improvements through systematic testing'
+          },
+          {
+            title: 'Custom Looker Studio Dashboards',
+            desc: 'Create a weekly performance dashboard in Looker Studio (free) pulling from GA4, Google Search Console, and Google Ads. Share with stakeholders for a single source of truth.',
+            impact: 'Faster data-driven decisions; spot trends and regressions early'
+          },
+          {
+            title: 'Micro-Conversion Event Tracking',
+            desc: 'Track engagement signals beyond conversions: video plays, scroll depth (25/50/75/100%), time on page thresholds, resource downloads, and outbound link clicks.',
+            impact: 'Understand content engagement; optimise for intent signals'
+          },
+          {
+            title: 'Multi-Touch Attribution Modelling',
+            desc: 'Move beyond last-click attribution in GA4. Use the data-driven attribution model (or linear) to understand the full customer journey from first touch to conversion.',
+            impact: 'Optimise marketing budget allocation; increase blended ROI by 20–30%'
+          },
+        ]
+      },
+    ];
+
+    let html = `<h1>5. Other Website Improvements</h1>
+<p>Beyond core SEO, these improvements will enhance user experience, increase conversions, and establish your brand as a market leader.</p>
+<div class="improvements-body">`;
+
+    for (const cat of categories) {
+      html += `<div class="improvement-category">
+  <div class="improvement-cat-title">${this.escapeHTML(cat.title)}</div>
+  <div class="improvement-grid">`;
+
+      for (const item of cat.items) {
+        html += `
+    <div class="improvement-card">
+      <div class="improvement-title">${this.escapeHTML(item.title)}</div>
+      <div class="improvement-desc">${this.escapeHTML(item.desc)}</div>
+      <div class="improvement-impact">Impact: ${this.escapeHTML(item.impact)}</div>
+    </div>`;
+      }
+
+      html += `</div></div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
   buildRoadmap() {
-    const quickWins = this.audit.recommendations.filter(r => r.effortLevel === 'QUICK_WIN').slice(0, 5);
-    const month1 = this.audit.recommendations.filter(r => ['CRITICAL', 'HIGH'].includes(r.priority) && r.effortLevel !== 'QUICK_WIN').slice(0, 4);
-    const month2 = this.audit.recommendations.filter(r => r.priority === 'MEDIUM').slice(0, 4);
-    const month3 = this.audit.recommendations.filter(r => r.priority === 'LOW').slice(0, 3);
+    const ownerForCategory = (cat) => {
+      if (['TECHNICAL_SEO', 'PERFORMANCE'].includes(cat)) return { label: 'Dev', cls: 'owner-dev' };
+      if (cat === 'CONTENT_QUALITY') return { label: 'Content', cls: 'owner-content' };
+      return { label: 'Marketing', cls: 'owner-marketing' };
+    };
 
-    const renderTasks = (tasks, fallbackImpact) => tasks.map(t => `
-    <div class="roadmap-task">
-      <div class="roadmap-task-title">${this.escapeHTML(this.truncate(t.title, 80))}</div>
-      <div class="roadmap-task-detail">${t.estimatedHours ? `Est. ${t.estimatedHours}h` : 'Quick'} &bull; ${this.escapeHTML(this.truncate(t.expectedImpact || fallbackImpact, 120))}</div>
-    </div>`).join('');
+    // Quick Wins: QUICK_WIN effort level OR CRITICAL/HIGH with low hours
+    const quickWins = this.audit.recommendations
+      .filter(r => r.effortLevel === 'QUICK_WIN' || (r.estimatedHours && r.estimatedHours <= 2))
+      .slice(0, 10);
 
-    return `<h1>5. Implementation Roadmap</h1>
+    // Month 1: remaining CRITICAL + HIGH items
+    const month1 = this.audit.recommendations
+      .filter(r => ['CRITICAL', 'HIGH'].includes(r.priority) && !quickWins.includes(r))
+      .slice(0, 8);
+
+    // Month 2: MEDIUM
+    const month2 = this.audit.recommendations.filter(r => r.priority === 'MEDIUM').slice(0, 6);
+
+    // Month 3: LOW
+    const month3 = this.audit.recommendations.filter(r => r.priority === 'LOW').slice(0, 5);
+
+    // Quick Wins: day-by-day table
+    let quickWinsRows = '';
+    quickWins.forEach((t, i) => {
+      const owner = ownerForCategory(t.category);
+      quickWinsRows += `<tr>
+        <td style="width:30px;color:#64748b;font-weight:600;">${i + 1}</td>
+        <td>${this.escapeHTML(t.title)} <span class="owner-badge ${owner.cls}">${owner.label}</span></td>
+        <td style="white-space:nowrap;color:#16a34a;font-weight:600;">${this.escapeHTML(t.expectedImpact || 'Quick improvement')}</td>
+      </tr>`;
+    });
+
+    // 30-day sprint table — static best-practice phases, augmented with actual recs
+    const sprintPhases = [
+      {
+        week: 'Week 2',
+        focus: 'Critical Technical Fixes',
+        items: month1.filter(r => r.category === 'TECHNICAL_SEO').map(r => r.title).slice(0, 3)
+          .concat(['Submit XML sitemap to Google Search Console', 'Enable GZIP / Brotli compression'])
+          .slice(0, 4)
+      },
+      {
+        week: 'Week 3',
+        focus: 'On-Page SEO & Content',
+        items: month1.filter(r => ['ON_PAGE_SEO', 'CONTENT_QUALITY'].includes(r.category)).map(r => r.title).slice(0, 3)
+          .concat(['Expand key service pages to 1,200+ words', 'Add internal links (3–5 per page)'])
+          .slice(0, 4)
+      },
+      {
+        week: 'Week 4',
+        focus: 'Authority & Schema Markup',
+        items: month1.filter(r => ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'].includes(r.category)).map(r => r.title).slice(0, 3)
+          .concat(['Implement Organisation + BreadcrumbList schema', 'Create or claim Google Business Profile'])
+          .slice(0, 4)
+      },
+    ];
+
+    let sprintRows = '';
+    for (const phase of sprintPhases) {
+      sprintRows += `<tr>
+        <td style="white-space:nowrap;font-weight:600;color:#1e293b;">${this.escapeHTML(phase.week)}</td>
+        <td style="font-weight:600;">${this.escapeHTML(phase.focus)}</td>
+        <td><ul style="margin:0;padding-left:14pt;">${phase.items.map(i => `<li>${this.escapeHTML(i)}</li>`).join('')}</ul></td>
+      </tr>`;
+    }
+
+    // 90-day strategic table — static
+    const strategicInitiatives = [
+      { month: 'Month 2', initiative: 'Content Marketing Campaign', goals: 'Publish 3 ultimate guides (3,000–5,000 words each) • Launch weekly LinkedIn newsletter • Publish 8 blog posts (1,500+ words) • Create 5 detailed case studies' },
+      { month: 'Month 2', initiative: 'Authority Building', goals: 'Publish 4–6 guest posts on high-DA sites • Launch monthly webinar series • Target 25–50 high-quality backlinks • Build relationships with 10 industry influencers' },
+      { month: 'Month 3', initiative: 'Conversion Rate Optimisation', goals: 'Create 5 dedicated landing pages for paid ads • Build interactive ROI calculator • Implement heatmaps and session recording • Launch A/B testing programme' },
+      { month: 'Month 3', initiative: 'Video & Multimedia', goals: 'Launch YouTube channel with 8–12 videos • Create product demo video for homepage • Record 3–5 customer video testimonials • Develop interactive product tour' },
+      { month: 'Month 3', initiative: 'Local SEO & Citations', goals: 'Build citations on 20+ directories • Audit and fix NAP consistency across the web • Optimise Google Business Profile weekly • Generate 10+ Google reviews' },
+      { month: 'Month 3', initiative: 'Analytics & Reporting', goals: 'Set up custom Looker Studio dashboards • Implement call tracking • Build attribution modelling • Establish weekly performance review cadence' },
+    ];
+
+    let strategicRows = strategicInitiatives.map(row => `<tr>
+      <td style="white-space:nowrap;font-weight:600;color:#1e293b;">${this.escapeHTML(row.month)}</td>
+      <td style="font-weight:600;">${this.escapeHTML(row.initiative)}</td>
+      <td style="font-size:8pt;color:#475569;">${this.escapeHTML(row.goals).replace(/•/g, '<br/>•')}</td>
+    </tr>`).join('');
+
+    // Month 2–3 medium/low tasks
+    const month2Rows = month2.map(t => {
+      const owner = ownerForCategory(t.category);
+      return `<div class="roadmap-task">
+        <div class="roadmap-task-title">${this.escapeHTML(t.title)} <span class="owner-badge ${owner.cls}">${owner.label}</span></div>
+        <div class="roadmap-task-detail">${t.estimatedHours ? `Est. ${t.estimatedHours}h` : 'Ongoing'} &bull; ${this.escapeHTML(t.expectedImpact || 'Enhances user experience and SEO')}</div>
+      </div>`;
+    }).join('');
+
+    const month3Rows = month3.map(t => {
+      const owner = ownerForCategory(t.category);
+      return `<div class="roadmap-task">
+        <div class="roadmap-task-title">${this.escapeHTML(t.title)} <span class="owner-badge ${owner.cls}">${owner.label}</span></div>
+        <div class="roadmap-task-detail">${t.estimatedHours ? `Est. ${t.estimatedHours}h` : 'Ongoing'} &bull; ${this.escapeHTML(t.expectedImpact || 'Long-term growth')}</div>
+      </div>`;
+    }).join('');
+
+    return `<h1>6. Implementation Roadmap</h1>
+<p>Organised into achievable phases based on impact, effort, and dependencies.</p>
 
 <div class="roadmap-phase">
   <div class="roadmap-header">Days 1–7: Quick Wins <span class="roadmap-subtitle">(${quickWins.length} tasks)</span></div>
-  <div class="roadmap-tasks">${renderTasks(quickWins, 'Immediate improvement')}</div>
+  <table style="border:1pt solid #cbd5e1;border-top:none;width:100%;font-size:9pt;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th style="width:30px;">#</th>
+        <th>Task</th>
+        <th>Impact</th>
+      </tr>
+    </thead>
+    <tbody>${quickWinsRows}</tbody>
+  </table>
 </div>
 
 <div class="roadmap-phase">
   <div class="roadmap-header">Month 1 (Weeks 2–4): Foundation Fixes <span class="roadmap-subtitle">(${month1.length} tasks)</span></div>
-  <div class="roadmap-tasks">${renderTasks(month1, 'Improves core SEO metrics')}</div>
+  <table style="border:1pt solid #cbd5e1;border-top:none;width:100%;font-size:9pt;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th>Week</th>
+        <th>Focus Area</th>
+        <th>Key Deliverables</th>
+      </tr>
+    </thead>
+    <tbody>${sprintRows}</tbody>
+  </table>
 </div>
 
-<div class="roadmap-phase">
+${month2.length > 0 ? `<div class="roadmap-phase">
   <div class="roadmap-header">Month 2 (Weeks 5–8): Optimisation <span class="roadmap-subtitle">(${month2.length} tasks)</span></div>
-  <div class="roadmap-tasks">${renderTasks(month2, 'Enhances user experience')}</div>
-</div>
+  <div class="roadmap-tasks">${month2Rows || '<div class="roadmap-task"><div class="roadmap-task-detail">Continue Month 1 work and begin content expansion</div></div>'}</div>
+</div>` : ''}
+
+${month3.length > 0 ? `<div class="roadmap-phase">
+  <div class="roadmap-header">Month 3 (Weeks 9–12): Polish &amp; Growth <span class="roadmap-subtitle">(${month3.length} tasks)</span></div>
+  <div class="roadmap-tasks">${month3Rows || '<div class="roadmap-task"><div class="roadmap-task-detail">Focus on content authority and conversion optimisation</div></div>'}</div>
+</div>` : ''}
 
 <div class="roadmap-phase">
-  <div class="roadmap-header">Month 3 (Weeks 9–12): Polish &amp; Growth <span class="roadmap-subtitle">(${month3.length} tasks)</span></div>
-  <div class="roadmap-tasks">${renderTasks(month3, 'Long-term improvement')}</div>
+  <div class="roadmap-header">90-Day Strategic Initiatives <span class="roadmap-subtitle">(longer-term projects)</span></div>
+  <table style="border:1pt solid #cbd5e1;border-top:none;width:100%;font-size:9pt;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th>Month</th>
+        <th>Strategic Initiative</th>
+        <th>Goals &amp; Targets</th>
+      </tr>
+    </thead>
+    <tbody>${strategicRows}</tbody>
+  </table>
 </div>`;
   }
 
   buildExpectedResults() {
-    const projected = this.audit.overallScore + Math.min(20, Math.floor((100 - this.audit.overallScore) * 0.4));
+    const projected = this.audit.overallScore + Math.min(22, Math.floor((100 - this.audit.overallScore) * 0.4));
     const improvement = ((projected - this.audit.overallScore) / this.audit.overallScore * 100).toFixed(0);
 
-    return `<h1>6. Expected Results After 90 Days</h1>
+    return `<h1>7. Expected Results After 90 Days</h1>
 <table>
   <thead><tr><th>Metric</th><th>Current</th><th>90-Day Target</th><th>Change</th></tr></thead>
   <tbody>
     <tr><td>SEO Score</td><td>${this.audit.overallScore}/100</td><td>${projected}/100</td><td class="color-low font-semibold">+${improvement}%</td></tr>
     <tr><td>Organic Traffic</td><td>Baseline</td><td>+150–200%</td><td class="color-low font-semibold">2–3x</td></tr>
     <tr><td>Top-10 Keyword Rankings</td><td>Unknown</td><td>25–40 keywords</td><td class="color-low font-semibold">New</td></tr>
+    <tr><td>Domain Authority</td><td>Est. 20–30</td><td>35–45</td><td class="color-low font-semibold">+33–50%</td></tr>
     <tr><td>Page Speed (Mobile)</td><td>Varies</td><td>75–85/100</td><td class="color-low font-semibold">+40–70%</td></tr>
     <tr><td>Conversion Rate</td><td>Est. 2–3%</td><td>4–6%</td><td class="color-low font-semibold">+100%</td></tr>
+    <tr><td>Monthly Organic Leads</td><td>Baseline</td><td>200–300</td><td class="color-low font-semibold">New</td></tr>
+    <tr><td>Backlinks</td><td>Est. 50–100</td><td>150–200</td><td class="color-low font-semibold">+100–150%</td></tr>
+    <tr><td>Avg Session Duration</td><td>Baseline</td><td>+30–45 sec</td><td class="color-low font-semibold">+25%</td></tr>
     <tr><td>Bounce Rate</td><td>Baseline</td><td>−15–20%</td><td class="color-low font-semibold">Reduction</td></tr>
+    <tr><td>Pages per Session</td><td>Baseline</td><td>+0.5–1.0</td><td class="color-low font-semibold">+20–30%</td></tr>
   </tbody>
 </table>
 <div class="highlight-box mt-2">
-  <strong>Note:</strong> Projections assume implementation of Critical and High-priority fixes.
-  Results compound over time — SEO is a long-term investment.
+  <strong>Note:</strong> Projections assume implementation of Critical and High-priority fixes. Actual results
+  vary by industry, competition level, and execution consistency. SEO is a long-term investment — results
+  compound significantly between 90 days and 6 months.
 </div>`;
   }
 
   buildActionSummary() {
     const immediateActions = [
-      'Assign owners for Quick Wins tasks (see Days 1–7 roadmap)',
-      'Set up project management board (Trello, Asana, or Monday.com)',
+      'Assign owners for all Quick Wins tasks (see Days 1–7 roadmap above)',
+      'Set up a project management board (Trello, Asana, Linear, or Monday.com)',
       'Schedule kickoff meeting with Marketing, Dev, and Content teams',
       'Create Google Search Console account and verify domain ownership',
-      'Run baseline performance tests: PageSpeed Insights, GTmetrix',
-      'Document current metrics (traffic, rankings, conversions) for comparison',
-      'Install an SEO plugin (Rank Math or Yoast) if not already in use',
-      'Set up weekly progress review cadence'
+      'Run baseline performance tests: PageSpeed Insights, GTmetrix, and Screaming Frog',
+      'Document current metrics (traffic, rankings, conversions) for before/after comparison',
+      'Install an SEO plugin (Rank Math Pro or Yoast SEO Premium) if not already in use',
+      'Set up weekly progress review cadence — track against the metrics table above'
     ];
 
-    const actions = immediateActions.map((a, i) => `<li>${this.escapeHTML(a)}</li>`).join('');
+    const tools = [
+      { name: 'WP Rocket or W3 Total Cache', purpose: 'Page speed & caching', cost: '$49–99/year', priority: 'CRITICAL', cls: 'color-critical' },
+      { name: 'Rank Math Pro or Yoast SEO', purpose: 'On-page SEO & schema', cost: 'Free–$59/year', priority: 'CRITICAL', cls: 'color-critical' },
+      { name: 'Google Search Console', purpose: 'Search performance & indexing', cost: 'Free', priority: 'CRITICAL', cls: 'color-critical' },
+      { name: 'Google Analytics 4', purpose: 'Website analytics & conversions', cost: 'Free', priority: 'CRITICAL', cls: 'color-critical' },
+      { name: 'SEMrush or Ahrefs', purpose: 'Keyword research & backlink analysis', cost: '$99–199/month', priority: 'HIGH', cls: 'color-high' },
+      { name: 'Hotjar or Microsoft Clarity', purpose: 'Heatmaps & session recordings', cost: 'Free–$39/month', priority: 'HIGH', cls: 'color-high' },
+      { name: 'Cloudflare (Free) or AWS CloudFront', purpose: 'CDN & performance', cost: 'Free–$20/month', priority: 'HIGH', cls: 'color-high' },
+      { name: 'Screaming Frog SEO Spider', purpose: 'Technical SEO crawl audits', cost: 'Free–£199/year', priority: 'HIGH', cls: 'color-high' },
+      { name: 'Canva Pro or Figma', purpose: 'Design & graphic creation', cost: '$12–15/month', priority: 'MEDIUM', cls: 'color-medium' },
+      { name: 'Grammarly Business', purpose: 'Content quality assurance', cost: '$15/month', priority: 'MEDIUM', cls: 'color-medium' },
+      { name: 'Mailchimp or ConvertKit', purpose: 'Email marketing & nurture', cost: 'Free–$29/month', priority: 'MEDIUM', cls: 'color-medium' },
+      { name: 'VWO or Google Optimize', purpose: 'A/B testing & CRO', cost: 'Free–$199/month', priority: 'MEDIUM', cls: 'color-medium' },
+      { name: 'Looker Studio (Google)', purpose: 'Custom analytics dashboards', cost: 'Free', priority: 'MEDIUM', cls: 'color-medium' },
+      { name: 'Unbounce or Leadpages', purpose: 'Dedicated landing pages', cost: '$49–90/month', priority: 'LOW', cls: 'color-low' },
+      { name: 'CallRail', purpose: 'Phone call tracking & attribution', cost: '$45/month', priority: 'LOW', cls: 'color-low' },
+      { name: 'Loom', purpose: 'Product demo & video creation', cost: 'Free–$12.50/month', priority: 'LOW', cls: 'color-low' },
+    ];
 
-    return `<h1>7. Action Summary &amp; Next Steps</h1>
+    const actions = immediateActions.map(a => `<li>${this.escapeHTML(a)}</li>`).join('');
+    const toolRows = tools.map(t => `<tr>
+      <td>${this.escapeHTML(t.name)}</td>
+      <td>${this.escapeHTML(t.purpose)}</td>
+      <td>${this.escapeHTML(t.cost)}</td>
+      <td class="${t.cls} font-semibold">${t.priority}</td>
+    </tr>`).join('');
+
+    return `<h1>8. Action Summary &amp; Next Steps</h1>
 
 <h2>Immediate Actions (This Week)</h2>
 <ol>${actions}</ol>
@@ -444,38 +873,424 @@ class EnhancedSEOReportGenerator {
   <thead><tr><th>Weekly</th><th>Monthly</th><th>Quarterly</th></tr></thead>
   <tbody>
     <tr>
-      <td>Organic traffic<br/>Keyword rankings<br/>Page speed scores</td>
-      <td>New backlinks<br/>Conversion rate<br/>Lead quality</td>
-      <td>Revenue from organic<br/>Customer acquisition cost<br/>Market share</td>
+      <td>Organic traffic<br/>Keyword rankings<br/>Page speed scores<br/>Form submissions</td>
+      <td>New backlinks<br/>Domain Authority<br/>Conversion rate<br/>Lead quality</td>
+      <td>Revenue from organic<br/>Customer acquisition cost<br/>Lifetime value<br/>Market share</td>
     </tr>
   </tbody>
 </table>
 
+<h2>Tools &amp; Resources</h2>
+<table>
+  <thead><tr><th>Tool / Resource</th><th>Purpose</th><th>Est. Cost</th><th>Priority</th></tr></thead>
+  <tbody>${toolRows}</tbody>
+</table>
+
 <div class="highlight-box mt-2">
-  <strong>Final Note:</strong> SEO is a marathon, not a sprint. The most significant results
-  compound over 90 days and beyond. Stay consistent with content creation, technical
-  optimisations, and link building. Review this report monthly and adjust based on data.
+  <strong>Final Note:</strong> SEO is a marathon, not a sprint. The most significant results compound over 90 days
+  and beyond. Stay consistent with content creation, technical optimisations, and link building. Review this
+  report monthly, track progress weekly, and adjust strategies based on data. With dedicated execution,
+  this site can achieve top-3 rankings for primary keywords and 3× organic traffic within 6 months.
 </div>`;
+  }
+
+  // ─── KEYWORD & CONTENT OPTIMIZATION ──────────────────────────────────────────
+
+  buildKeywordOptimization() {
+    const onPageResult = (this.audit.results || []).find(r => r.category === 'ON_PAGE_SEO');
+    if (!onPageResult || !onPageResult.issues) return '';
+
+    const issues = Array.isArray(onPageResult.issues) ? onPageResult.issues : [];
+    const titleSpecifics = [];
+    const metaSpecifics = [];
+    const h1Specifics = [];
+
+    for (const issue of issues) {
+      if (!issue.specifics || issue.specifics.length === 0) continue;
+      if (['missing_title_tags', 'short_title_tags', 'long_title_tags', 'duplicate_title_tags'].includes(issue.type)) {
+        titleSpecifics.push(...issue.specifics);
+      }
+      if (['missing_meta_descriptions', 'short_meta_descriptions', 'long_meta_descriptions', 'duplicate_meta_descriptions'].includes(issue.type)) {
+        metaSpecifics.push(...issue.specifics);
+      }
+      if (['missing_h1', 'multiple_h1'].includes(issue.type)) {
+        h1Specifics.push(...issue.specifics);
+      }
+    }
+
+    if (titleSpecifics.length === 0 && metaSpecifics.length === 0 && h1Specifics.length === 0) {
+      return '';
+    }
+
+    let html = `<h2>Recommended Content &amp; Structural Updates</h2>
+<p>Page-by-page copy-paste ready optimisations for title tags, meta descriptions, and H1 headings. Green cells are the recommended values — ready to implement.</p>`;
+
+    if (titleSpecifics.length > 0) {
+      html += `<h3>Homepage &amp; Key Page Title Tags</h3>
+<p class="kw-note">Target: 50–60 characters | Include primary keyword + brand name</p>
+<table class="specifics-table" style="margin-bottom:12pt;">
+  <thead>
+    <tr>
+      <th style="width:26%;">Page URL</th>
+      <th class="current-col" style="width:37%;">Current Title</th>
+      <th class="suggested-col" style="width:37%;">Recommended Title</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+      for (const s of titleSpecifics.slice(0, 15)) {
+        const path = (s.url || '').replace(/https?:\/\/[^/]+/, '').slice(0, 40) || '/';
+        const currentLen = s.current?.length || 0;
+        const suggestedLen = s.suggested?.length || 0;
+        const currentVal = s.current?.value || '(none)';
+        const suggestedVal = s.suggested?.value || '';
+        html += `<tr>
+          <td class="url-cell">${this.escapeHTML(path)}</td>
+          <td class="current-value">${this.escapeHTML(currentVal.length > 65 ? currentVal.slice(0, 62) + '...' : currentVal)}${currentLen > 0 ? ` <span class="length-badge">${currentLen}c</span>` : ''}</td>
+          <td class="suggested-value"><strong>${this.escapeHTML(suggestedVal.length > 65 ? suggestedVal.slice(0, 62) + '...' : suggestedVal)}</strong>${suggestedLen > 0 ? ` <span class="length-badge good">${suggestedLen}c</span>` : ''}</td>
+        </tr>`;
+      }
+      if (titleSpecifics.length > 15) {
+        html += `<tr><td colspan="3" class="more-rows">+ ${titleSpecifics.length - 15} more pages require title tag updates</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+
+    if (metaSpecifics.length > 0) {
+      html += `<h3>Meta Description Optimisation</h3>
+<p class="kw-note">Target: 130–155 characters | Compelling summary with a soft call-to-action</p>
+<table class="specifics-table" style="margin-bottom:12pt;">
+  <thead>
+    <tr>
+      <th style="width:22%;">Page URL</th>
+      <th class="current-col" style="width:39%;">Current Meta Description</th>
+      <th class="suggested-col" style="width:39%;">Recommended Meta Description</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+      for (const s of metaSpecifics.slice(0, 10)) {
+        const path = (s.url || '').replace(/https?:\/\/[^/]+/, '').slice(0, 32) || '/';
+        const currentVal = s.current?.value || '(none)';
+        const suggestedVal = s.suggested?.value || '';
+        const currentLen = s.current?.length || 0;
+        const suggestedLen = s.suggested?.length || 0;
+        html += `<tr>
+          <td class="url-cell">${this.escapeHTML(path)}</td>
+          <td class="current-value">${this.escapeHTML(currentVal.length > 100 ? currentVal.slice(0, 97) + '...' : currentVal)}${currentLen > 0 ? ` <span class="length-badge">${currentLen}c</span>` : ''}</td>
+          <td class="suggested-value"><strong>${this.escapeHTML(suggestedVal.length > 100 ? suggestedVal.slice(0, 97) + '...' : suggestedVal)}</strong>${suggestedLen > 0 ? ` <span class="length-badge good">${suggestedLen}c</span>` : ''}</td>
+        </tr>`;
+      }
+      if (metaSpecifics.length > 10) {
+        html += `<tr><td colspan="3" class="more-rows">+ ${metaSpecifics.length - 10} more pages require meta description updates</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+
+    if (h1Specifics.length > 0) {
+      html += `<h3>H1 Heading Fixes</h3>
+<p class="kw-note">One H1 per page | Should include primary keyword | Can differ from title tag</p>
+<table class="specifics-table" style="margin-bottom:12pt;">
+  <thead>
+    <tr>
+      <th style="width:28%;">Page URL</th>
+      <th class="current-col" style="width:36%;">Current H1</th>
+      <th class="suggested-col" style="width:36%;">Recommended H1</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+      for (const s of h1Specifics.slice(0, 10)) {
+        const path = (s.url || '').replace(/https?:\/\/[^/]+/, '').slice(0, 40) || '/';
+        const currentVal = s.current?.value || '(none)';
+        const suggestedVal = s.suggested?.value || '';
+        html += `<tr>
+          <td class="url-cell">${this.escapeHTML(path)}</td>
+          <td class="current-value">${this.escapeHTML(currentVal)}</td>
+          <td class="suggested-value"><strong>${this.escapeHTML(suggestedVal)}</strong></td>
+        </tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+
+    return html;
+  }
+
+  getSpecificsForIssue(issueTitle) {
+    for (const result of (this.audit.results || [])) {
+      const issues = Array.isArray(result.issues) ? result.issues : [];
+      for (const issue of issues) {
+        if (issue.title === issueTitle && issue.specifics?.length > 0) {
+          return issue.specifics.slice(0, 4);
+        }
+      }
+    }
+    return [];
+  }
+
+  buildSpecificsTable(specifics, maxRows = 4) {
+    if (!specifics || specifics.length === 0) return '';
+    const rows = specifics.slice(0, maxRows).map(s => {
+      const path = (s.url || '').replace(/https?:\/\/[^/]+/, '').slice(0, 35) || '/';
+      const currentVal = s.current?.value || '';
+      const suggestedVal = s.suggested?.value || '';
+      const currentLen = s.current?.length || currentVal.length;
+      const suggestedLen = s.suggested?.length || suggestedVal.length;
+      return `<tr>
+        <td class="url-cell">${this.escapeHTML(path)}</td>
+        <td class="current-value">${this.escapeHTML(currentVal.length > 55 ? currentVal.slice(0, 52) + '...' : currentVal)}${currentLen > 0 ? ` <span class="length-badge">${currentLen}c</span>` : ''}</td>
+        <td class="suggested-value">${this.escapeHTML(suggestedVal.length > 55 ? suggestedVal.slice(0, 52) + '...' : suggestedVal)}${suggestedLen > 0 ? ` <span class="length-badge good">${suggestedLen}c</span>` : ''}</td>
+      </tr>`;
+    }).join('');
+    const moreCount = specifics.length - maxRows;
+    return `<div class="before-after-section">
+  <div class="before-after-label">Before / After Specifics</div>
+  <table class="specifics-table">
+    <thead><tr>
+      <th style="width:28%;">Page</th>
+      <th class="current-col" style="width:36%;">Current</th>
+      <th class="suggested-col" style="width:36%;">Recommended</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  ${moreCount > 0 ? `<div class="more-rows">+ ${moreCount} more — see full table in the Keyword Optimisation section below</div>` : ''}
+</div>`;
+  }
+
+  getImplementationSteps(title) {
+    const lookup = {
+      "Robots.txt Blocks All Pages": [
+        "Open your robots.txt file at https://[yourdomain]/robots.txt",
+        "Find “Disallow: /” and change it to “Disallow:” (empty value = allow all crawlers)",
+        "Keep “User-agent: *” at the top to apply to all search engines",
+        "Add: “Sitemap: https://[yourdomain]/sitemap.xml” at the bottom",
+        "Verify the fix in Google Search Console → Settings → robots.txt Tester",
+        "Request re-crawl in Google Search Console after confirming the fix is live",
+      ],
+      "Missing XML Sitemap": [
+        "Install Rank Math or Yoast SEO (WordPress) to auto-generate a sitemap at /sitemap.xml",
+        "For other platforms, use your CMS sitemap feature or an online generator",
+        "Include all important pages: homepage, service pages, blog posts, landing pages",
+        "Exclude: admin pages, search results, thank-you pages, and near-duplicate content",
+        "Add “Sitemap: https://[yourdomain]/sitemap.xml” to robots.txt",
+        "Submit the sitemap in Google Search Console → Sitemaps section",
+        "Also submit in Bing Webmaster Tools for additional coverage",
+      ],
+      "No Structured Data Found": [
+        "Add Organization schema to your homepage using JSON-LD format in <script type=\"application/ld+json\">",
+        "Add WebSite schema with a SearchAction to enable sitelinks in Google",
+        "For service/local businesses add LocalBusiness schema with address, phone, and hours",
+        "Add Article/BlogPosting schema to all blog posts (include author, date, image)",
+        "Add BreadcrumbList schema to all interior pages",
+        "Add FAQPage schema to any page with question-and-answer sections",
+        "Validate with Google's Rich Results Test before deploying",
+      ],
+      "Missing H1 Tags": [
+        "Identify the primary keyword/topic for each affected page",
+        "Add a single descriptive H1 tag that summarises the page and includes the target keyword",
+        "Ensure the H1 is visible, not hidden, and appears only once per page",
+        "In WordPress, the page/post title typically becomes the H1 — check your theme isn't hiding it",
+        "In page builders (Elementor, Divi), set heading elements explicitly to H1 vs H2",
+        "Verify with Screaming Frog or your browser's dev tools after publishing",
+      ],
+      "Multiple H1 Tags": [
+        "Use your browser DevTools (Ctrl+F → “h1”) or Screaming Frog to find all H1 elements",
+        "Keep only the single most important H1 that describes the page's primary topic",
+        "Convert all other H1 elements to H2 or H3 based on their place in the content hierarchy",
+        "Common cause: page builders adding H1 tags for decorative headings — change these to H2",
+        "Also check if your theme adds a site title as an H1 in addition to post titles",
+        "Re-audit after changes to confirm only one H1 remains per page",
+      ],
+      "Images Missing Alt Text": [
+        "Audit all images using Screaming Frog (free up to 500 URLs) or your SEO plugin",
+        "For each content image, write a 5–15 word description of what the image shows",
+        "Include target keywords naturally where relevant — never keyword-stuff alt text",
+        "Use empty alt=\"\" for purely decorative images (icons, dividers, backgrounds)",
+        "In WordPress, set alt text in the Media Library for each image or in the block editor",
+        "Prioritise: product images, infographics, charts, team photos, and hero images first",
+        "Regenerate thumbnails after updating if images are served via WordPress media",
+      ],
+      "Missing Meta Descriptions": [
+        "Write a unique 130–155 character meta description for each affected page",
+        "Include the primary keyword naturally within the description",
+        "Frame it as a compelling benefit summary to improve click-through rates from search results",
+        "Add a soft call-to-action where natural: “Learn more”, “See pricing”, “Get started”",
+        "In WordPress, use Rank Math or Yoast to set meta descriptions without editing theme files",
+        "Avoid duplicating descriptions — each page must have a unique one",
+        "Monitor in Google Search Console to see where Google auto-generates descriptions instead",
+      ],
+      "Title Tags Too Short": [
+        "Expand each title tag to 50–60 characters to fill the available SERP display space",
+        "Include the primary keyword for the page near the beginning of the title",
+        "Append the brand name at the end: “Main Topic - Descriptor | Brand Name”",
+        "Use pipes (|) or hyphens (-) as separators — both are acceptable",
+        "Research competing pages ranking for your target keywords for title inspiration",
+        "Test updated titles in a SERP preview tool (e.g. Portent Title Tag Preview) before publishing",
+        "Track CTR changes in Google Search Console after updating (takes 2–4 weeks to measure)",
+      ],
+      "Title Tags Too Long": [
+        "Shorten each title to stay within 60 characters (Google truncates at ~600px width)",
+        "Prioritise the most important keyword at the beginning of the title",
+        "Remove filler words: “Welcome to”, “The official”, “A great place for”",
+        "Abbreviate the brand name if it's very long (e.g. \"CompanyName\" → \"Brand\")",
+        "Use a SERP preview tool to confirm the shortened title won't truncate awkwardly",
+        "Test both desktop and mobile SERP previews — mobile may truncate earlier",
+      ],
+      "Duplicate Title Tags": [
+        "Export all page URLs and title tags (use Screaming Frog or your SEO plugin)",
+        "Group pages with identical titles and identify what makes each page unique",
+        "Rewrite each title to reflect the specific content, keyword, and searcher intent of that page",
+        "For very similar pages (e.g. city location pages), include the city name to differentiate",
+        "Consider consolidating near-duplicate pages into one stronger page with a 301 redirect",
+        "Add canonical tags if two pages are unavoidably similar and one is the primary version",
+      ],
+      "Missing LocalBusiness Schema": [
+        "Create a JSON-LD LocalBusiness schema block for your homepage or contact page",
+        "Include: @type, name, url, telephone, email, address (full postal address)",
+        "Add openingHoursSpecification for each day with opens and closes times",
+        "Include geo coordinates (latitude and longitude) for accurate map placement",
+        "Add image (logo URL), priceRange ($, $$, $$$), and sameAs links to social profiles",
+        "Use Google's Rich Results Test to validate schema before publishing",
+        "Install Rank Math or Schema Pro plugin for easier schema management in WordPress",
+      ],
+      "No Google Maps Embed": [
+        "Go to Google Maps and search for your business address",
+        "Click Share → Embed a map → Copy the provided HTML iframe code",
+        "Paste the embed on your Contact or About page in a suitable location",
+        "Ensure the embedded map address matches your LocalBusiness schema address exactly",
+        "Alternatively, add a text link to a custom Google Maps pin for your location",
+        "Test on mobile — ensure the iframe is responsive and doesn't overflow its container",
+      ],
+      "Keyword Cannibalization Risk": [
+        "Export all page titles and URLs; identify pages targeting the same core keywords",
+        "For each conflicting pair, determine which page is the primary (most authoritative) target",
+        "Consolidate very similar pages into one stronger page using 301 redirects",
+        "Where pages must remain separate, rewrite each to target distinctly different keyword variations",
+        "Update internal links so only the primary page gets the most contextual links",
+        "Add canonical tags where content is necessarily similar but pages serve different audiences",
+        "Track rankings per keyword in Google Search Console to confirm only one page surfaces per query",
+      ],
+      "Potential Keyword Cannibalization": [
+        "Export all page titles and URLs; identify pages targeting the same core keywords",
+        "For each conflicting pair, determine which is the primary (most authoritative) target page",
+        "Consolidate very similar pages into one stronger page using 301 redirects where possible",
+        "Where pages must remain separate, rewrite content to target distinctly different keyword variants",
+        "Ensure internal links prioritise the primary page for each target keyword",
+      ],
+      "Missing Canonical Tags": [
+        "Add a self-referencing canonical tag to every page in the <head>: <link rel=\"canonical\" href=\"[full-URL]\">",
+        "Ensure canonical URLs always use HTTPS and match your preferred URL format (trailing slash or not)",
+        "In WordPress, Rank Math and Yoast automatically add self-referencing canonicals",
+        "For paginated content, canonical page 1 or use rel=\"next\" / rel=\"prev\"",
+        "For pages with URL parameters (e.g. ?sort=price), canonical to the clean base URL",
+        "Audit with Screaming Frog to confirm canonical tags are present and correct site-wide",
+      ],
+      "Trailing Slash Inconsistency": [
+        "Decide on one canonical format: always trailing slash (/about/) OR never (/about)",
+        "Implement 301 redirects for the non-canonical form to the canonical form",
+        "Update your CMS permalink settings to enforce consistent URL formatting",
+        "Update all internal links in navigation, footer, and body content to use the canonical form",
+        "Set your preferred URL format in Google Search Console under Settings",
+        "Submit a fresh sitemap after changes to help Google re-index the correct URLs",
+      ],
+      "Sitemap Not Referenced in Robots.txt": [
+        "Open your robots.txt file for editing",
+        "Add the following line at the very end: Sitemap: https://[yourdomain]/sitemap.xml",
+        "If you have multiple sitemaps (image sitemap, news sitemap), add one line per sitemap",
+        "Save and verify the change is live at https://[yourdomain]/robots.txt",
+        "Test in Google Search Console → Settings → robots.txt Tester",
+      ],
+      "Possible JavaScript-Dependent Content": [
+        "Use Google Search Console's URL Inspection → Test Live URL to see how Googlebot renders your page",
+        "Ensure all critical content (headings, descriptions, CTAs) is in the initial HTML response",
+        "Test by disabling JavaScript in your browser — does the core content still appear?",
+        "Implement server-side rendering (SSR) or static pre-rendering for JavaScript-heavy pages",
+        "For forms requiring JS, ensure at least a fallback message is visible without JavaScript",
+        "Consider pre-rendering critical content with tools like Prerender.io or Next.js SSR",
+      ],
+      "Poor Internal Linking": [
+        "Add 3–5 contextual internal links within the body content of each key page",
+        "Link from high-traffic pages to lower-traffic pages you want to rank higher",
+        "Use descriptive anchor text containing target keywords (not generic “click here”)",
+        "Create topic clusters: one pillar page with multiple supporting pages all cross-linking",
+        "Add “Related Articles” or “You may also like” sections to blog posts and service pages",
+        "Audit your navigation to ensure all important pages are reachable within 3 clicks from homepage",
+        "Fix orphaned pages (pages with no internal links pointing to them) by linking from relevant content",
+      ],
+      "Missing robots.txt": [
+        "Create a plain text file named robots.txt in your website root directory",
+        "Minimum content: “User-agent: *\nDisallow:” (blank Disallow = allow everything)",
+        "Add sitemap reference: “Sitemap: https://[yourdomain]/sitemap.xml”",
+        "Optionally block directories you don't want indexed: admin, wp-admin, staging, duplicate search results",
+        "Never block /wp-content/ or CSS/JS files — Google needs these to render your pages",
+        "Verify at https://[yourdomain]/robots.txt and test in Google Search Console",
+      ],
+      "Thin Content on Key Pages": [
+        "Identify your most important pages (homepage, service pages, pillar landing pages)",
+        "Expand each to at least 800 words (service pages) or 1,200+ words (pillar/resource pages)",
+        "Add: case studies with specific metrics, industry statistics (with citations), and concrete examples",
+        "Include a FAQ section covering the top 5–10 questions your target audience asks",
+        "Add internal links to related content to improve topical depth and crawl efficiency",
+        "Use subheadings (H2s, H3s) to structure expanded content for readability",
+        "After expanding, submit updated URLs for indexing in Google Search Console",
+      ],
+    };
+    return lookup[title] || [];
   }
 
   // ─── HELPERS ────────────────────────────────────────────────────────────────
 
   identifyStrengths() {
     const strengths = [];
+
     for (const result of this.audit.results) {
       if (result.categoryScore >= 70) {
+        const cat = this.formatCategoryName(result.category);
+        const preserveMap = {
+          'TECHNICAL_SEO': 'Maintain current technical setup. Keep monitoring Core Web Vitals in Google Search Console.',
+          'ON_PAGE_SEO': 'Continue current on-page practices. Expand to new pages as you create them.',
+          'CONTENT_QUALITY': 'Keep publishing high-quality content. Aim for 1,500+ words on key service pages.',
+          'PERFORMANCE': 'Monitor page speed weekly. Re-test after any major updates.',
+          'AUTHORITY_BACKLINKS': 'Continue link-building efforts. Diversify anchor text and referring domains.',
+          'LOCAL_SEO': 'Keep Google Business Profile updated. Respond to reviews promptly.',
+        };
         strengths.push({
-          title: `Strong ${this.formatCategoryName(result.category)} (${result.categoryScore}/100)`,
-          description: `Your ${this.formatCategoryName(result.category).toLowerCase()} performance is solid. Continue current practices and build on this foundation.`
+          title: `Strong ${cat} (${result.categoryScore}/100)`,
+          description: `Your ${cat.toLowerCase()} performance is solid. Continue current practices and build on this foundation.`,
+          preserve: preserveMap[result.category] || 'Continue current practices.'
         });
       }
     }
+
     const generic = [
-      { title: 'HTTPS Security', description: 'Site uses HTTPS, meeting Google\'s security requirements and protecting user data.' },
-      { title: 'Mobile-Responsive Design', description: 'Responsive design ensures usability across devices.' },
-      { title: 'Clear Site Architecture', description: 'Logical hierarchy makes it easy for users and crawlers to navigate.' }
+      {
+        title: 'HTTPS Security',
+        description: 'Site uses HTTPS, meeting Google\'s security requirements and protecting user data.',
+        preserve: 'Maintain your SSL certificate and monitor for mixed content warnings. Renew before expiry.'
+      },
+      {
+        title: 'Mobile-Responsive Design',
+        description: 'Responsive design ensures usability across all devices — a core Google ranking factor.',
+        preserve: 'Continue testing on multiple devices after layout changes. Maintain a mobile-first approach.'
+      },
+      {
+        title: 'Clear Site Architecture',
+        description: 'Logical page hierarchy makes it easy for both users and search engine crawlers to navigate.',
+        preserve: 'Maintain this structure as you add new pages. Add breadcrumb navigation for enhanced UX and SEO.'
+      },
+      {
+        title: 'Social Media Integration',
+        description: 'Social profiles and sharing signals support multi-channel brand visibility and referral traffic.',
+        preserve: 'Ensure all social profiles are active and link back to the website. Use consistent branding across platforms.'
+      },
+      {
+        title: 'Multiple Conversion Points',
+        description: 'Multiple CTAs and contact options throughout the site increase opportunities for visitors to convert.',
+        preserve: 'Keep these CTAs but A/B test copy and colour variations to continually improve click-through rates.'
+      },
     ];
-    return [...strengths, ...generic];
+
+    return [...strengths, ...generic].slice(0, 10);
   }
 
   getScoreColorClass(score) {
@@ -500,12 +1315,6 @@ class EnhancedSEOReportGenerator {
   formatRating(rating) {
     if (!rating) return 'N/A';
     return rating.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  }
-
-  truncate(text, maxLength) {
-    if (!text) return '';
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength - 3) + '...';
   }
 
   escapeHTML(text) {

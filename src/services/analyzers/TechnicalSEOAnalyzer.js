@@ -177,23 +177,28 @@ class TechnicalSEOAnalyzer {
             type: 'robots_blocks_all',
             severity: 'critical',
             title: 'Robots.txt Blocks All Pages',
-            description: 'robots.txt contains "Disallow: /" which blocks search engines from crawling your site.',
-            recommendation: 'Remove or modify the "Disallow: /" rule in robots.txt to allow search engine crawling.',
+            description: `robots.txt contains "Disallow: /" which instructs ALL search engines to stop crawling this site. This is the most severe SEO issue possible — Google cannot index any page. Note: robots.txt itself is always publicly accessible (crawlers fetch it regardless of its rules), which is why this tool detected it even though external crawlers that respect robots.txt cannot verify the site's content.`,
+            recommendation: 'Remove or modify the "Disallow: /" rule in robots.txt to allow search engine crawling. Also add a Sitemap: directive pointing to your sitemap.xml.',
             affectedPages: this.pages.length,
             evidence: [{
               url: `https://${this.domain}/robots.txt`,
-              detail: 'Contains "Disallow: /"'
+              detail: 'Contains "Disallow: /" — blocks all user-agents'
             }]
           });
         }
 
-        if (!hasSitemapReference && this.checks.sitemap?.exists) {
+        // When Disallow: / is present, also flag the missing sitemap reference (both fixes needed together)
+        // When not blocking, only flag if sitemap exists but isn't referenced
+        const shouldFlagSitemapRef = !hasSitemapReference && (hasDisallowAll || this.checks.sitemap?.exists);
+        if (shouldFlagSitemapRef) {
           this.issues.push({
             type: 'robots_missing_sitemap',
-            severity: 'low',
+            severity: hasDisallowAll ? 'high' : 'low',
             title: 'Sitemap Not Referenced in Robots.txt',
-            description: 'robots.txt does not include a Sitemap: directive.',
-            recommendation: 'Add "Sitemap: https://' + this.domain + '/sitemap.xml" to robots.txt.',
+            description: hasDisallowAll
+              ? 'robots.txt does not include a Sitemap: directive. Once you fix the Disallow: / rule, adding a sitemap reference ensures search engines discover all your pages immediately.'
+              : 'robots.txt does not include a Sitemap: directive. This makes it harder for search engines to discover all pages efficiently.',
+            recommendation: `Add the following line to robots.txt: Sitemap: https://${this.domain}/sitemap.xml`,
             affectedPages: 0
           });
         }
