@@ -29,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^5.8.0",
+    "@sanity/client": "^7.16.0",
     "axios": "^1.6.5",
     "bullmq": "^5.1.0",
     "cheerio": "^1.0.0-rc.12",
