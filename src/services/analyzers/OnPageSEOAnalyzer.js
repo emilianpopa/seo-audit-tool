@@ -481,7 +481,7 @@ class OnPageSEOAnalyzer {
       if (h1Tags.length === 0) {
         headingIssues.missingH1.push(page.url);
         const suggestedH1 = page.title
-          ? page.title.replace(/\s*[|\\-–—].*$/, '').trim()
+          ? page.title.split(/\s*[|–—]\s*/)[0].replace(/\s+-\s+.*$/, '').trim()
           : this._domainBrand() + ' — Main Heading';
         missingSpecifics.push({
           url: page.url,
@@ -807,14 +807,16 @@ class OnPageSEOAnalyzer {
    */
   checkInternalLinking() {
     let totalLinks = 0;
-    const pagesWithFewLinks = [];
+    const weakLinkingPages = [];
 
     for (const page of this.pages) {
       const linkCount = page.linkCount || 0;
+      const wordCount = page.wordCount || 0;
       totalLinks += linkCount;
 
-      if (linkCount < 3 && page.path !== '/') {
-        pagesWithFewLinks.push({ url: page.url, linkCount });
+      // Flag content-rich pages with insufficient linking
+      if (page.path !== '/' && wordCount > 400 && linkCount < 5) {
+        weakLinkingPages.push({ url: page.url, linkCount, wordCount });
       }
     }
 
@@ -826,19 +828,23 @@ class OnPageSEOAnalyzer {
       totalPages: this.pages.length,
       totalLinks,
       avgLinksPerPage,
-      pagesWithFewLinks: pagesWithFewLinks.length,
-      status: avgLinksPerPage >= 5 ? 'pass' : 'warning'
+      pagesWithWeakLinking: weakLinkingPages.length,
+      status: weakLinkingPages.length === 0 ? 'pass' : 'warning'
     };
 
-    if (pagesWithFewLinks.length > 0) {
+    if (weakLinkingPages.length > 0) {
       this.issues.push({
-        type: 'poor_internal_linking',
-        severity: 'low',
-        title: 'Poor Internal Linking',
-        description: `${pagesWithFewLinks.length} pages have fewer than 3 internal links.`,
-        recommendation: 'Add contextual internal links to improve site navigation and distribute link equity.',
-        affectedPages: pagesWithFewLinks.length,
-        examples: pagesWithFewLinks.slice(0, 5)
+        type: 'weak_internal_linking',
+        severity: 'medium',
+        title: 'Weak Internal Linking',
+        description: `${weakLinkingPages.length} content-rich page${weakLinkingPages.length > 1 ? 's have' : ' has'} fewer than 5 internal links despite substantial content. Google distributes PageRank through internal links — sparse linking leaves pages under-ranked.`,
+        recommendation: 'Add 3–5 contextual internal links per 500 words of content. Link from main content paragraphs (not just navigation) using descriptive anchor text containing target keywords.',
+        affectedPages: weakLinkingPages.length,
+        examples: weakLinkingPages.slice(0, 5),
+        evidence: weakLinkingPages.slice(0, 5).map(p => ({
+          url: p.url,
+          detail: `Only ${p.linkCount} link${p.linkCount !== 1 ? 's' : ''} in ${p.wordCount} words of content`
+        }))
       });
     }
 
@@ -890,7 +896,10 @@ class OnPageSEOAnalyzer {
     }
 
     if (this.checks.internalLinking) {
-      const linkScore = Math.min(100, (this.checks.internalLinking.avgLinksPerPage / 10) * 100);
+      const { pagesWithWeakLinking: weakLinkingPages, totalPages } = this.checks.internalLinking;
+      const linkScore = weakLinkingPages === 0
+        ? 100
+        : Math.max(0, 100 - (weakLinkingPages / (totalPages || 1)) * 100);
       totalScore += linkScore * weights.internalLinking;
       totalWeight += weights.internalLinking;
     }

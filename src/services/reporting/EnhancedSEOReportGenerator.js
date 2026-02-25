@@ -811,21 +811,44 @@ class EnhancedSEOReportGenerator {
       return { label: 'Marketing', cls: 'owner-marketing' };
     };
 
-    // Quick Wins: QUICK_WIN effort level OR CRITICAL/HIGH with low hours
-    const quickWins = this.audit.recommendations
-      .filter(r => r.effortLevel === 'QUICK_WIN' || (r.estimatedHours && r.estimatedHours <= 2))
+    // Quick Wins (Days 1-7): ALL critical + all high + any quick-win effort items
+    // Sort by priority first (CRITICAL => HIGH => MEDIUM => LOW), then by effort
+    const priorityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const sortedRecs = [...this.audit.recommendations].sort((a, b) => {
+      const pa = priorityOrder[a.priority] ?? 4;
+      const pb = priorityOrder[b.priority] ?? 4;
+      if (pa !== pb) return pa - pb;
+      // Within same priority, put QUICK_WIN first
+      if (a.effortLevel === 'QUICK_WIN' && b.effortLevel !== 'QUICK_WIN') return -1;
+      if (b.effortLevel === 'QUICK_WIN' && a.effortLevel !== 'QUICK_WIN') return 1;
+      return (a.estimatedHours || 99) - (b.estimatedHours || 99);
+    });
+
+    // Quick Wins: all CRITICAL, all HIGH, plus any MEDIUM with QUICK_WIN effort
+    const quickWins = sortedRecs
+      .filter(r =>
+        r.priority === 'CRITICAL' ||
+        r.priority === 'HIGH' ||
+        r.effortLevel === 'QUICK_WIN'
+      )
       .slice(0, 10);
 
-    // Month 1: remaining CRITICAL + HIGH items
-    const month1 = this.audit.recommendations
-      .filter(r => ['CRITICAL', 'HIGH'].includes(r.priority) && !quickWins.includes(r))
+    const quickWinSet = new Set(quickWins.map(r => r.id || r.title));
+
+    // Month 1 (weeks 2-4): MEDIUM items NOT already in Quick Wins
+    const month1 = sortedRecs
+      .filter(r => r.priority === 'MEDIUM' && !quickWinSet.has(r.id || r.title))
       .slice(0, 8);
 
-    // Month 2: MEDIUM
-    const month2 = this.audit.recommendations.filter(r => r.priority === 'MEDIUM').slice(0, 6);
+    // Month 2: remaining MEDIUM + easy LOW
+    const month2 = sortedRecs
+      .filter(r => r.priority === 'LOW' && r.effortLevel !== 'MAJOR_PROJECT')
+      .slice(0, 6);
 
-    // Month 3: LOW
-    const month3 = this.audit.recommendations.filter(r => r.priority === 'LOW').slice(0, 5);
+    // Month 3: complex LOW
+    const month3 = sortedRecs
+      .filter(r => r.priority === 'LOW' && r.effortLevel === 'MAJOR_PROJECT')
+      .slice(0, 5);
 
     // Quick Wins: day-by-day table
     let quickWinsRows = '';
@@ -842,23 +865,23 @@ class EnhancedSEOReportGenerator {
     const sprintPhases = [
       {
         week: 'Week 2',
-        focus: 'Critical Technical Fixes',
-        items: month1.filter(r => r.category === 'TECHNICAL_SEO').map(r => r.title).slice(0, 3)
-          .concat(['Submit XML sitemap to Google Search Console', 'Enable GZIP / Brotli compression'])
+        focus: 'On-Page & Content Optimisation',
+        items: month1.filter(r => ['ON_PAGE_SEO', 'CONTENT_QUALITY'].includes(r.category)).map(r => r.title).slice(0, 3)
+          .concat(['Expand key service pages to 1,200+ words'])
           .slice(0, 4)
       },
       {
         week: 'Week 3',
-        focus: 'On-Page SEO & Content',
-        items: month1.filter(r => ['ON_PAGE_SEO', 'CONTENT_QUALITY'].includes(r.category)).map(r => r.title).slice(0, 3)
-          .concat(['Expand key service pages to 1,200+ words', 'Add internal links (3–5 per page)'])
+        focus: 'Authority & Schema Markup',
+        items: month1.filter(r => ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'].includes(r.category)).map(r => r.title).slice(0, 3)
+          .concat(['Implement BreadcrumbList schema', 'Create or claim Google Business Profile'])
           .slice(0, 4)
       },
       {
         week: 'Week 4',
-        focus: 'Authority & Schema Markup',
-        items: month1.filter(r => ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'].includes(r.category)).map(r => r.title).slice(0, 3)
-          .concat(['Implement Organisation + BreadcrumbList schema', 'Create or claim Google Business Profile'])
+        focus: 'Performance & Technical Polish',
+        items: month1.filter(r => ['TECHNICAL_SEO', 'PERFORMANCE'].includes(r.category)).map(r => r.title).slice(0, 3)
+          .concat(['Enable GZIP / Brotli compression', 'Submit XML sitemap to Google Search Console'])
           .slice(0, 4)
       },
     ];
@@ -1486,8 +1509,8 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     }
 
     // On-Page: good internal linking
-    if (onPageChecks.internalLinks?.averageLinksPerPage >= 3) {
-      const avg = onPageChecks.internalLinks.averageLinksPerPage.toFixed(1);
+    if (onPageChecks.internalLinking?.avgLinksPerPage >= 5) {
+      const avg = onPageChecks.internalLinking.avgLinksPerPage.toFixed(1);
       strengths.push({
         title: `Good Internal Linking (avg ${avg} links/page)`,
         description: `Pages average ${avg} internal links, helping search engines discover content and distributing link equity across the site. Strong internal linking is a key on-page ranking factor.`,
@@ -1549,6 +1572,33 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       }
     }
 
+    // Engaging/memorable brand copywriting
+    if (homepage && strengths.length < 10) {
+      const metaDesc = homepage.metaDescription || '';
+      const h2s = homepage.h2Tags || [];
+
+      // Look for emotional/benefit-driven language in headings
+      const engagingH2 = h2s.find(h =>
+        h.length > 20 &&
+        /thrive|transform|power|revolution|future|success|growth|close.*gap|upskill/i.test(h)
+      );
+
+      if (engagingH2 && strengths.length < 10) {
+        strengths.push({
+          title: 'Engaging Section Headings',
+          description: `Benefit-driven headings like "${engagingH2}" demonstrate clear value proposition and use emotional hooks that improve dwell time. Strong headings also help Google understand page structure and relevance.`,
+          preserve: 'Continue writing H2s as outcome statements, not just topic labels. "Close the Skills Gap with AI-Powered Pathing" outranks "Our Features" for both users and search engines.'
+        });
+      } else if (metaDesc && metaDesc.length > 80 && !metaDesc.includes('Learn more on') && strengths.length < 10) {
+        // Use meta description as evidence of copywriting quality
+        strengths.push({
+          title: 'Descriptive Homepage Meta',
+          description: `Homepage has a substantive meta description: "${metaDesc.substring(0, 120)}${metaDesc.length > 120 ? '…' : ''}". A well-crafted meta description improves click-through rates from search results.`,
+          preserve: 'Update meta descriptions whenever the core value proposition evolves. Keep them 130–155 characters with a benefit statement and soft CTA.'
+        });
+      }
+    }
+
     // Active blog / content section
     const blogPages = pages.filter(p =>
       /\/(blog|article|post|news|insights?|resources?)s?\//i.test(p.url || '') &&
@@ -1568,11 +1618,19 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       /\/(testimonial|review|case.?stud|client|success|about|team)/i.test(p.path || '') ||
       /testimonial|case stud|client success|customer story/i.test(p.title || '')
     );
-    if (trustPages.length > 0 && strengths.length < 9) {
+    // Also check homepage HTML for testimonial content
+    const homepageHasTestimonials = homepage && homepage.html &&
+      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.html);
+
+    if ((trustPages.length > 0 || homepageHasTestimonials) && strengths.length < 10) {
+      const source = trustPages.length > 0
+        ? `Dedicated trust pages found: ${trustPages.slice(0, 2).map(p => p.title || p.path).join(', ')}.`
+        : 'Customer testimonials found on homepage.';
+
       strengths.push({
-        title: `Customer Proof Pages (${trustPages.length} found)`,
-        description: `Dedicated trust pages found: ${trustPages.slice(0, 2).map(p => p.title || p.path).join(', ')}. Social proof is essential for B2B conversion — it validates your claims with real customer outcomes.`,
-        preserve: 'Regularly update these pages with new testimonials, case studies, and measurable results (specific metrics: %, time saved, revenue impact). Add video testimonials for maximum trust impact.'
+        title: `Customer Proof & Social Validation${trustPages.length > 0 ? ` (${trustPages.length} dedicated pages)` : ''}`,
+        description: `${source} Social proof is essential for B2B conversion — real customer outcomes validate your claims and reduce purchase hesitation.`,
+        preserve: 'Regularly add new testimonials with company names, roles, and specific metrics. Aim for video testimonials (3× more persuasive than text). Feature case study results with % improvements and time-to-value metrics.'
       });
     }
 
@@ -1586,6 +1644,25 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
         description: `${servicePages.length} dedicated service/solution pages detected. A comprehensive page structure helps target specific keyword variations and guides different visitor personas to relevant content.`,
         preserve: 'Maintain this structure as you add new services. Ensure each service page has unique title tags, meta descriptions, and at least 1,000 words of unique content. Cross-link between related service pages.'
       });
+    }
+
+    // Multiple conversion points (CTAs, forms, newsletter signup)
+    if (homepage && homepage.html && strengths.length < 10) {
+      const ctaSignals = [
+        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.html),
+        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.html),
+        /<form[\s>]/i.test(homepage.html),
+        /newsletter|subscribe/i.test(homepage.html),
+        /contact.?us|get.?in.?touch/i.test(homepage.html)
+      ].filter(Boolean).length;
+
+      if (ctaSignals >= 2) {
+        strengths.push({
+          title: 'Multiple Conversion Points',
+          description: `The homepage includes ${ctaSignals} distinct conversion opportunities (sign-up CTAs, demo requests, contact forms, newsletter). Multiple touchpoints increase the chance of capturing visitors at different stages of the buying journey.`,
+          preserve: 'Keep CTAs visible and prominent. A/B test CTA copy variations ("Get Started Free" vs "See It in Action" vs "Start Free Trial"). Ensure every key page has at least one primary CTA above the fold.'
+        });
+      }
     }
 
     // Schema markup present

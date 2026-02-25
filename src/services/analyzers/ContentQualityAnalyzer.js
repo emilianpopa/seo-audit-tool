@@ -78,10 +78,18 @@ class ContentQualityAnalyzer {
    */
   checkContentVolume() {
     // Determine threshold based on page type
-    function getWordCountThreshold(url) {
+    function getWordCountThreshold(url, path) {
       const lower = (url || '').toLowerCase();
+      const p = (path || '').replace(/\/$/, '');
+
       if (/\/(blog|article|post|news|guide|resource)s?\//.test(lower)) return 600;
       if (/\/(service|product|solution|offering)s?\//.test(lower)) return 800;
+
+      // Pillar/hub pages: depth-1 paths that are not the homepage
+      // e.g. /organizations/, /outsourcing/, /individuals/, /about/
+      const depth = (p.match(/\//g) || []).length;
+      if (depth === 1 && p.length > 1) return 600;
+
       return 300;
     }
 
@@ -93,10 +101,11 @@ class ContentQualityAnalyzer {
       const wordCount = page.wordCount || 0;
       totalWords += wordCount;
 
-      const threshold = getWordCountThreshold(page.url);
+      const threshold = getWordCountThreshold(page.url, page.path);
       if (wordCount < threshold && page.path !== '/') {
         thinContent.push({
           url: page.url,
+          path: page.path,
           wordCount,
           threshold
         });
@@ -125,7 +134,14 @@ class ContentQualityAnalyzer {
 
     // Add issues
     if (thinContent.length > 0) {
-      const severity = thinContent.length > (this.pages.length * 0.5) ? 'high' : 'medium';
+      // Count how many thin-content pages are pillar pages (likely high impact)
+      const thinPillarCount = thinContent.filter(item => {
+        const p = (item.path || item.url || '').replace(/^https?:\/\/[^/]+/, '').replace(/\/$/, '');
+        const depth = (p.match(/\//g) || []).length;
+        return depth === 1;
+      }).length;
+
+      const severity = (thinContent.length > (this.pages.length * 0.5) || thinPillarCount > 0) ? 'high' : 'medium';
 
       this.issues.push({
         type: 'thin_content',
@@ -137,7 +153,7 @@ class ContentQualityAnalyzer {
         examples: thinContent.slice(0, 5),
         evidence: thinContent.slice(0, 5).map(item => ({
           url: item.url,
-          detail: `${item.wordCount} words (minimum: ${item.threshold})`
+          detail: `${item.wordCount} words — below the ${item.threshold}-word minimum for this page type. Target: ${Math.round(item.threshold * 1.5)}+ words.`
         }))
       });
     }
