@@ -1616,8 +1616,8 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       /testimonial|case stud|client success|customer story/i.test(p.title || '')
     );
     // Also check homepage HTML for testimonial content
-    const homepageHasTestimonials = homepage && homepage.html &&
-      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.html);
+    const homepageHasTestimonials = homepage && homepage.htmlSnapshot &&
+      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.htmlSnapshot);
 
     if ((trustPages.length > 0 || homepageHasTestimonials) && strengths.length < 10) {
       const source = trustPages.length > 0
@@ -1644,13 +1644,13 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     }
 
     // Multiple conversion points (CTAs, forms, newsletter signup)
-    if (homepage && homepage.html && strengths.length < 10) {
+    if (homepage && homepage.htmlSnapshot && strengths.length < 10) {
       const ctaSignals = [
-        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.html),
-        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.html),
-        /<form[\s>]/i.test(homepage.html),
-        /newsletter|subscribe/i.test(homepage.html),
-        /contact.?us|get.?in.?touch/i.test(homepage.html)
+        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.htmlSnapshot),
+        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.htmlSnapshot),
+        /<form[\s>]/i.test(homepage.htmlSnapshot),
+        /newsletter|subscribe/i.test(homepage.htmlSnapshot),
+        /contact.?us|get.?in.?touch/i.test(homepage.htmlSnapshot)
       ].filter(Boolean).length;
 
       if (ctaSignals >= 2) {
