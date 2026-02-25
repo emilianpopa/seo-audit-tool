@@ -88,7 +88,8 @@ async function processAudit(job) {
           hasSchema: page.hasSchema || false,
           schemaTypes: page.schemaTypes || [],
           openGraphTags: page.openGraphTags || null,
-          twitterTags: page.twitterTags || null
+          twitterTags: page.twitterTags || null,
+          htmlSnapshot: page.html ? page.html.slice(0, 500000) : null
         }
       });
     }

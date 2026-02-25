@@ -1541,6 +1541,10 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     for (const result of (this.audit.results || [])) {
       if (result.categoryScore >= 75 && strengths.length < 9) {
         const cat = this.formatCategoryName(result.category);
+        // Skip generic ON_PAGE_SEO and CONTENT_QUALITY score fillers — not meaningful qualitative strengths.
+        // Allow them as absolute last resort only when very few strengths exist and score is exceptional.
+        const isGenericFiller = result.category === 'ON_PAGE_SEO' || result.category === 'CONTENT_QUALITY';
+        if (isGenericFiller && !(strengths.length < 3 && result.categoryScore > 85)) continue;
         // Avoid duplicating a strength already added from check data
         const alreadyCovered = strengths.some(s =>
           (result.category === 'TECHNICAL_SEO' && s.title.includes('SSL')) ||
@@ -1572,44 +1576,37 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       }
     }
 
-    // Engaging/memorable brand copywriting
-    if (homepage && strengths.length < 10) {
-      const metaDesc = homepage.metaDescription || '';
-      const h2s = homepage.h2Tags || [];
-
-      // Look for emotional/benefit-driven language in headings
-      const engagingH2 = h2s.find(h =>
-        h.length > 20 &&
-        /thrive|transform|power|revolution|future|success|growth|close.*gap|upskill/i.test(h)
-      );
-
-      if (engagingH2 && strengths.length < 10) {
+    // Engaging Copywriting
+    const homepageForCopy = (this.audit.pages || []).find(p => p.path === '/' || p.url?.endsWith('/'));
+    if (homepageForCopy && strengths.length < 10) {
+      const copySource = (homepageForCopy.htmlSnapshot || '') + ' ' + (homepageForCopy.h2Tags || []).join(' ');
+      const hasEngagingCopy = copySource.length > 50 &&
+        /thrive|survive.*crisis|we're here to|transform|empower|not just here|revolution|future of work|skills crisis|help you/i.test(copySource);
+      if (hasEngagingCopy) {
+        // Find a quote to showcase
+        let quote = null;
+        if (homepageForCopy.htmlSnapshot) {
+          const m = homepageForCopy.htmlSnapshot.match(/we'?re not just here[^<.]{10,80}/i) ||
+                    homepageForCopy.htmlSnapshot.match(/here to help you [^<.]{10,60}/i) ||
+                    homepageForCopy.htmlSnapshot.match(/revolution in [^<.]{10,60}/i);
+          if (m) quote = m[0].replace(/<[^>]+>/g, '').trim();
+        }
         strengths.push({
-          title: 'Engaging Section Headings',
-          description: `Benefit-driven headings like "${engagingH2}" demonstrate clear value proposition and use emotional hooks that improve dwell time. Strong headings also help Google understand page structure and relevance.`,
-          preserve: 'Continue writing H2s as outcome statements, not just topic labels. "Close the Skills Gap with AI-Powered Pathing" outranks "Our Features" for both users and search engines.'
-        });
-      } else if (metaDesc && metaDesc.length > 80 && !metaDesc.includes('Learn more on') && strengths.length < 10) {
-        // Use meta description as evidence of copywriting quality
-        strengths.push({
-          title: 'Descriptive Homepage Meta',
-          description: `Homepage has a substantive meta description: "${metaDesc.substring(0, 120)}${metaDesc.length > 120 ? '…' : ''}". A well-crafted meta description improves click-through rates from search results.`,
-          preserve: 'Update meta descriptions whenever the core value proposition evolves. Keep them 130–155 characters with a benefit statement and soft CTA.'
+          title: 'Engaging Copywriting',
+          description: `${quote ? `"${quote}" — ` : ''}Benefit-focused, emotionally resonant copy throughout the site creates a strong first impression and improves dwell time. Strong brand voice differentiates the site in search results. Preserve: Continue this tone across all pages. Ensure consistency in brand voice as you add new content.`
         });
       }
     }
 
-    // Active blog / content section
-    const blogPages = pages.filter(p =>
-      /\/(blog|article|post|news|insights?|resources?)s?\//i.test(p.url || '') &&
-      (p.title || '').length > 5
-    );
-    if (blogPages.length >= 2 && strengths.length < 9) {
-      const blogTitles = blogPages.slice(0, 2).map(p => `"${p.title || p.path}"`).join(' and ');
+    // Active Blog Content
+    const blogPages = (this.audit.pages || []).filter(p => {
+      const path = (p.path || p.url || '').toLowerCase();
+      return /\/(blog|post|article|news|category|insight)s?(\/|$)/.test(path);
+    });
+    if (blogPages.length >= 2 && strengths.length < 10) {
       strengths.push({
-        title: `Active Blog / Content Section (${blogPages.length} articles found)`,
-        description: `${blogPages.length} blog/article pages detected, including ${blogTitles}. Regular, high-quality content is one of the strongest organic ranking signals and establishes topical authority.`,
-        preserve: `Keep publishing 2–4 high-quality articles per month (1,500+ words). Ensure each post has a unique title, meta description, and at least 3 internal links to service pages. Feature recent posts on the homepage.`
+        title: 'Active Blog Content',
+        description: `${blogPages.length} blog/content pages detected. Regular publishing signals to Google that the site is authoritative and up-to-date. Preserve: Keep publishing 2-4 high-quality posts per month (1,500+ words each). Feature recent posts on the homepage to boost dwell time and internal linking.`
       });
     }
 
