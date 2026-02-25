@@ -46,6 +46,7 @@ class TechnicalSEOAnalyzer {
       // Run synchronous checks that depend on crawled page data
       this.checkRedirectConsistency();
       this.checkJSDependentForms();
+      await this.checkJavaScriptDependentForms();
 
       // Calculate category score
       const categoryScore = this.calculateScore();
@@ -575,6 +576,63 @@ class TechnicalSEOAnalyzer {
       auditId: this.auditId,
       suspectedJSPages: suspectedJSPages.length
     }, 'JS-dependent content checked');
+  }
+
+  /**
+   * Check for JavaScript-dependent forms
+   * Forms requiring JS may not be crawlable and exclude users with JS disabled
+   */
+  async checkJavaScriptDependentForms() {
+    const jsDependentPages = [];
+
+    for (const page of this.pages) {
+      const html = page.htmlSnapshot;
+      if (!html) continue;
+
+      // Check for explicit JS requirement messages in or near forms
+      const hasJSMessage = /please enable javascript.*form|javascript.*required.*form|form.*require.*javascript|enable js.*submit|javascript.*must be enabled/i.test(html);
+      // Check for noscript blocks containing form fallback messages
+      const hasNoscriptForm = /<noscript[^>]*>[\s\S]{0,200}form[\s\S]{0,200}<\/noscript>/i.test(html);
+      // Check for forms that rely purely on JS event handlers with no action attribute
+      const hasNoActionForm = /<form(?![^>]*\baction\s*=)[^>]*>/i.test(html) && /<form/i.test(html);
+
+      if (hasJSMessage || hasNoscriptForm) {
+        jsDependentPages.push({
+          url: page.url,
+          reason: hasJSMessage ? 'Explicit "enable JavaScript" message detected near form' : 'Form fallback in <noscript> block detected'
+        });
+      }
+    }
+
+    this.checks.jsDependentForms = {
+      pagesChecked: this.pages.filter(p => p.htmlSnapshot).length,
+      pagesWithJSForms: jsDependentPages.length,
+      status: jsDependentPages.length > 0 ? 'warning' : 'pass'
+    };
+
+    if (jsDependentPages.length > 0) {
+      this.issues.push({
+        type: 'js_dependent_forms',
+        severity: 'high',
+        title: 'JavaScript-Dependent Forms',
+        description: `${jsDependentPages.length} page${jsDependentPages.length > 1 ? 's have' : ' has'} forms that require JavaScript to function. Googlebot crawls pages with JavaScript disabled by default — JS-dependent forms are invisible to crawlers, preventing form actions and conversion signals from being indexed. Users with accessibility tools or strict browser settings also cannot use these forms.`,
+        recommendation: 'Implement progressive enhancement: forms should submit via standard HTML POST with a server-side fallback, with JavaScript used only to enhance the experience (validation, AJAX submission). Never require JS for core form functionality.',
+        implementation: [
+          'Audit all contact, signup, and lead-gen forms for JavaScript dependencies',
+          'Add a standard HTML action attribute and method="post" to all form elements',
+          'Implement server-side form handling as the baseline — JS submission is an enhancement',
+          'Test all forms with JavaScript disabled in Chrome DevTools (Settings → Debugger → Disable JavaScript)',
+          'Add a <noscript> tag with a message directing users to an alternative contact method',
+          'Use Google Search Console\'s URL Inspection tool to check if Googlebot can see your form fields after the fix'
+        ].join(' | '),
+        expectedImpact: 'Moderate-high impact. Expected score increase: +5-10 points.',
+        evidence: jsDependentPages.slice(0, 3).map(p => ({
+          url: p.url,
+          detail: p.reason
+        })),
+        affectedPages: jsDependentPages.length
+      });
+    }
   }
 
   /**

@@ -34,6 +34,7 @@ class ContentQualityAnalyzer {
       this.checkKeywordCannibalization();
       this.checkReadability();
       this.checkFAQSections();
+      this.checkUncitedStatistics();
       this.checkMultimediaPresence();
       this.checkEEATSignals();
       this.checkBlogFeaturedOnHomepage();
@@ -343,9 +344,22 @@ class ContentQualityAnalyzer {
       this.issues.push({
         type: 'no_faq_sections',
         severity: 'medium',
-        title: 'No FAQ Sections Detected',
-        description: 'No FAQ sections or FAQPage schema found on any page. FAQ content targets "People Also Ask" featured snippets and improves dwell time. This is a significant missed opportunity for organic traffic.',
-        recommendation: 'Consider adding FAQ sections with FAQPage schema markup to relevant pages.',
+        title: 'No FAQ Section',
+        description: 'No FAQ sections or FAQPage schema markup found on any page. FAQ content directly targets Google\'s "People Also Ask" boxes and featured snippets — easy-to-rank positions that appear above organic results. Without FAQ content, these high-visibility spots go to competitors.',
+        recommendation: 'Add a FAQ section with FAQPage schema markup to the homepage and key service pages. Write 5–8 questions in the exact language your customers use.',
+        implementation: [
+          'Identify the 5–8 most common questions your sales team hears ("What is Thrivin?", "How does pricing work?", "How long does onboarding take?", "What integrations do you support?")',
+          'Add a visible FAQ section to the homepage and at least one key service page',
+          'Mark up the FAQ with FAQPage JSON-LD schema: each question uses @type "Question" and the answer uses @type "Answer"',
+          'Use exact question phrasing customers search for — this is what triggers "People Also Ask" features',
+          'Keep answers concise (40–60 words each) but link to longer dedicated pages for detail',
+          'Test schema validity at schema.org/validator before deploying',
+          'Submit the updated page URLs to Google Search Console for re-crawl after publishing'
+        ].join(' | '),
+        expectedImpact: 'Moderate impact. Expected score increase: +3-5 points.',
+        evidence: [
+          { url: 'Homepage (/)', detail: 'Missed queries: "What is [your product]?", "How does pricing work?", "How long does implementation take?", "What integrations are available?"' }
+        ],
         affectedPages: 0
       });
     }
@@ -354,6 +368,67 @@ class ContentQualityAnalyzer {
       auditId: this.auditId,
       pagesWithFAQ: pagesWithFAQ.length
     }, 'FAQ sections checked');
+  }
+
+  /**
+   * Check for uncited statistics
+   * Detects impressive-sounding stats without source links — an E-E-A-T risk
+   */
+  checkUncitedStatistics() {
+    const pagesWithUncitedStats = [];
+
+    for (const page of this.pages) {
+      const html = page.htmlSnapshot;
+      if (!html) continue;
+
+      // Find segments with statistic-like patterns
+      const statPattern = /(\$[\d,.]+\s*(trillion|billion|million|T|B)\b|\b\d{1,3}%|\b\d{2,}\s*x\b|\b(by\s+20\d{2})\b)/gi;
+      const matches = [...html.matchAll(statPattern)];
+
+      let uncitedCount = 0;
+      for (const match of matches) {
+        const idx = match.index;
+        // Check ±300 chars around the stat for a citation link
+        const context = html.slice(Math.max(0, idx - 300), idx + 300);
+        const hasCitation = /<a\s[^>]*href/i.test(context) && /source|cit|ref|study|research|report/i.test(context);
+        const hasFootnote = /\[\d+\]|\*+/.test(context);
+        if (!hasCitation && !hasFootnote) uncitedCount++;
+      }
+
+      if (uncitedCount >= 2) {
+        pagesWithUncitedStats.push({ url: page.url, uncitedCount });
+      }
+    }
+
+    this.checks.uncitedStatistics = {
+      pagesChecked: this.pages.filter(p => p.htmlSnapshot).length,
+      pagesWithUncitedStats: pagesWithUncitedStats.length,
+      status: pagesWithUncitedStats.length > 0 ? 'warning' : 'pass'
+    };
+
+    if (pagesWithUncitedStats.length > 0) {
+      this.issues.push({
+        type: 'uncited_statistics',
+        severity: 'low',
+        title: 'Statistics Lack Source Citations',
+        description: `${pagesWithUncitedStats.length} page${pagesWithUncitedStats.length > 1 ? 's contain' : ' contains'} impressive-sounding statistics without visible source citations. Uncited claims reduce E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) signals — a key Google quality factor. Competitors who cite authoritative sources rank higher for informational queries.`,
+        recommendation: 'Add inline source links or footnotes to all statistics. Cite authoritative sources: government reports, academic research, or reputable industry publications (McKinsey, Gartner, LinkedIn, WEF).',
+        implementation: [
+          'Audit every statistic on your key pages (homepage, service pages, blog)',
+          'For each claim, find the original source (McKinsey, LinkedIn Learning, WEF, Gartner, government labour statistics)',
+          'Add an inline hyperlink: e.g., "skills shortage by 2030 [McKinsey, 2023]" linking to the original report',
+          'If the original source is paywalled, cite the secondary source that reported it',
+          'Consider adding a "Sources" section at the bottom of content-heavy pages',
+          'Remove any statistics you cannot find a credible source for — fabricated stats actively hurt E-E-A-T'
+        ].join(' | '),
+        expectedImpact: 'Low impact. Expected score increase: +1-3 points.',
+        evidence: pagesWithUncitedStats.slice(0, 3).map(p => ({
+          url: p.url,
+          detail: `${p.uncitedCount} statistics found without source citations`
+        })),
+        affectedPages: pagesWithUncitedStats.length
+      });
+    }
   }
 
   /**
