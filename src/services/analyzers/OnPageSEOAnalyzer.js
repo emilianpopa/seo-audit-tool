@@ -128,6 +128,7 @@ class OnPageSEOAnalyzer {
       this.checkTitleTags();
       this.checkMetaDescriptions();
       this.checkHeadingStructure();
+      this.checkHeadingHierarchy();
       this.checkURLStructure();
       this.checkImageOptimization();
       this.checkInternalLinking();
@@ -537,9 +538,11 @@ class OnPageSEOAnalyzer {
     if (headingIssues.multipleH1.length > 0) {
       this.issues.push({
         type: 'multiple_h1',
-        severity: 'medium',
+        severity: 'high',
         title: 'Multiple H1 Tags',
-        description: `${headingIssues.multipleH1.length} pages have multiple H1 tags. Each page should have only one H1.`,
+        description: headingIssues.multipleH1.length === 1
+          ? `1 page has ${headingIssues.multipleH1[0].count} H1 tags: "${headingIssues.multipleH1[0].h1Tags.slice(0,2).join('" and "')}"${headingIssues.multipleH1[0].h1Tags.length > 2 ? ` (+${headingIssues.multipleH1[0].h1Tags.length-2} more)` : ''}. Each page should have only one H1.`
+          : `${headingIssues.multipleH1.length} pages have multiple H1 tags. Each page should have only one H1.`,
         recommendation: 'Keep only the primary H1; convert all others to H2 or H3 subheadings.',
         affectedPages: headingIssues.multipleH1.length,
         examples: headingIssues.multipleH1.slice(0, 3),
@@ -551,6 +554,67 @@ class OnPageSEOAnalyzer {
   }
 
   /**
+   * Check heading hierarchy (H2s present, H3s only after H2s, etc.)
+   */
+  checkHeadingHierarchy() {
+    const hierarchyIssues = [];
+
+    for (const page of this.pages) {
+      const h1Tags = page.h1Tags || [];
+      const h2Tags = page.h2Tags || [];
+      const h3Tags = page.h3Tags || [];
+
+      // Pages with substantial content (H1 present) should have H2s for structure
+      if (h1Tags.length === 1 && h2Tags.length === 0 && (page.wordCount || 0) > 400) {
+        hierarchyIssues.push({
+          url: page.url,
+          issue: 'missing_h2',
+          detail: `No H2 subheadings on page with ${page.wordCount} words and H1: "${h1Tags[0]}"`
+        });
+      }
+
+      // H3s without any H2s is a hierarchy violation
+      if (h3Tags.length > 0 && h2Tags.length === 0) {
+        const alreadyAdded = hierarchyIssues.some(i => i.url === page.url);
+        if (!alreadyAdded) {
+          hierarchyIssues.push({
+            url: page.url,
+            issue: 'h3_without_h2',
+            detail: `${h3Tags.length} H3 tag${h3Tags.length > 1 ? 's' : ''} found but no H2 tags — skipped heading level`
+          });
+        }
+      }
+    }
+
+    this.checks.headingHierarchy = {
+      totalPages: this.pages.length,
+      issuesCount: hierarchyIssues.length,
+      status: hierarchyIssues.length === 0 ? 'pass' : 'warning'
+    };
+
+    if (hierarchyIssues.length > 0) {
+      const missingH2Count = hierarchyIssues.filter(i => i.issue === 'missing_h2').length;
+      const h3WithoutH2Count = hierarchyIssues.filter(i => i.issue === 'h3_without_h2').length;
+
+      let desc = '';
+      if (missingH2Count > 0) desc += `${missingH2Count} page${missingH2Count > 1 ? 's have' : ' has'} no H2 subheadings despite substantial content. `;
+      if (h3WithoutH2Count > 0) desc += `${h3WithoutH2Count} page${h3WithoutH2Count > 1 ? 's use' : ' uses'} H3 tags without H2 tags (skipped heading level).`;
+
+      this.issues.push({
+        type: 'heading_hierarchy_issues',
+        severity: 'medium',
+        title: 'Heading Hierarchy Issues',
+        description: desc.trim(),
+        recommendation: 'Use H2 for main sections and H3 for sub-sections within H2 blocks. Never skip heading levels (e.g. H1 → H3 without H2).',
+        affectedPages: hierarchyIssues.length,
+        evidence: hierarchyIssues.slice(0, 4).map(i => ({ url: i.url, detail: i.detail }))
+      });
+    }
+
+    logger.debug({ auditId: this.auditId, issuesCount: hierarchyIssues.length }, 'Heading hierarchy checked');
+  }
+
+  /**
    * Check URL structure
    */
   checkURLStructure() {
@@ -559,6 +623,7 @@ class OnPageSEOAnalyzer {
       hasParameters: [],
       notDescriptive: []
     };
+    const deepURLs = [];
 
     for (const page of this.pages) {
       const url = page.url;
@@ -575,6 +640,11 @@ class OnPageSEOAnalyzer {
       if (path.length < 3 && path !== '/') {
         urlIssues.notDescriptive.push(url);
       }
+
+      const depth = (path.replace(/\/$/, '').match(/\//g) || []).length;
+      if (depth >= 4) {
+        deepURLs.push({ url, depth });
+      }
     }
 
     const goodURLs = this.pages.length - urlIssues.tooLong.length - urlIssues.hasParameters.length;
@@ -588,6 +658,7 @@ class OnPageSEOAnalyzer {
       percentageGood,
       tooLongCount: urlIssues.tooLong.length,
       hasParametersCount: urlIssues.hasParameters.length,
+      deepURLCount: deepURLs.length,
       status: percentageGood >= 80 ? 'pass' : 'warning'
     };
 
@@ -612,6 +683,18 @@ class OnPageSEOAnalyzer {
         recommendation: 'Use clean, SEO-friendly URLs without query parameters when possible.',
         affectedPages: urlIssues.hasParameters.length,
         examples: urlIssues.hasParameters.slice(0, 5)
+      });
+    }
+
+    if (deepURLs.length > 0) {
+      this.issues.push({
+        type: 'deep_url_structure',
+        severity: 'low',
+        title: 'Deep URL Structure',
+        description: `${deepURLs.length} URL${deepURLs.length > 1 ? 's are' : ' is'} ${deepURLs.length > 1 ? 'more than' : ''} 4+ levels deep (e.g. "${deepURLs[0].url.replace(/^https?:\/\/[^/]+/, '')}")${deepURLs.length > 1 ? ` and ${deepURLs.length - 1} more` : ''}. Flat URL structures are preferred by search engines.`,
+        recommendation: 'Flatten URL hierarchy to a maximum of 3 levels. Use 301 redirects for any restructured URLs.',
+        affectedPages: deepURLs.length,
+        evidence: deepURLs.slice(0, 4).map(p => ({ url: p.url, detail: `${p.depth} levels deep` }))
       });
     }
 
@@ -769,9 +852,10 @@ class OnPageSEOAnalyzer {
       titleTags: 25,
       metaDescriptions: 20,
       headingStructure: 20,
-      urlStructure: 15,
+      urlStructure: 10,
       imageOptimization: 10,
-      internalLinking: 10
+      internalLinking: 10,
+      headingHierarchy: 5
     };
 
     let totalScore = 0;
@@ -809,6 +893,13 @@ class OnPageSEOAnalyzer {
       const linkScore = Math.min(100, (this.checks.internalLinking.avgLinksPerPage / 10) * 100);
       totalScore += linkScore * weights.internalLinking;
       totalWeight += weights.internalLinking;
+    }
+
+    if (this.checks.headingHierarchy) {
+      const { issuesCount, totalPages } = this.checks.headingHierarchy;
+      const score = issuesCount === 0 ? 100 : Math.max(0, 100 - (issuesCount / (totalPages || 1)) * 100);
+      totalScore += score * weights.headingHierarchy;
+      totalWeight += weights.headingHierarchy;
     }
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;

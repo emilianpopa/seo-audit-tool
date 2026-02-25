@@ -270,7 +270,7 @@ class LocalSEOAnalyzer {
         type: 'no_google_maps',
         severity: 'medium',
         title: 'No Google Maps Embed',
-        description: 'No Google Maps embed found. Embedding a map helps users find your location.',
+        description: 'No Google Maps embed or Google Business Profile link found. Even for digital businesses, a Google Business Profile helps you appear in Google\'s knowledge panel and local search results.',
         recommendation: 'Embed a Google Map of your business location on your contact or about page.',
         affectedPages: 0
       });
@@ -408,15 +408,67 @@ class LocalSEOAnalyzer {
   }
 
   /**
+   * Detect whether the site is likely a SaaS/B2B/digital business
+   * rather than a local brick-and-mortar business.
+   * Returns 'saas', 'ecommerce', or 'local'
+   */
+  detectBusinessType() {
+    const homepage = this.pages.find(p => p.path === '/' || p.path === '') || this.pages[0];
+    if (!homepage) return 'local';
+
+    const titleLower = (homepage.title || '').toLowerCase();
+    const h1Lower = (homepage.h1Tags || []).join(' ').toLowerCase();
+    const metaLower = (homepage.metaDescription || '').toLowerCase();
+    const allText = `${titleLower} ${h1Lower} ${metaLower}`;
+
+    const saasSignals = [
+      'platform', 'software', 'saas', 'app', 'api', 'dashboard', 'subscription',
+      'free trial', 'sign up', 'get started', 'sign in', 'log in', 'pricing',
+      'workforce', 'upskill', 'elearning', 'e-learning', 'lms', 'crm', 'erp',
+      'solution', 'enterprise', 'integration', 'automation', 'workflow', 'cloud'
+    ];
+
+    const localSignals = [
+      'restaurant', 'salon', 'clinic', 'dentist', 'lawyer', 'attorney', 'plumber',
+      'electrician', 'contractor', 'store', 'shop', 'cafe', 'hotel', 'gym',
+      'near me', 'serving', 'located in', 'visit us'
+    ];
+
+    const saasScore = saasSignals.filter(s => allText.includes(s)).length;
+    const localScore = localSignals.filter(s => allText.includes(s)).length;
+
+    if (saasScore >= 2 && saasScore > localScore) return 'saas';
+    if (localScore >= 2) return 'local';
+    return 'local'; // default to local
+  }
+
+  /**
    * Calculate Local SEO score
    */
   calculateScore() {
-    const weights = {
+    const businessType = this.detectBusinessType();
+
+    // For SaaS/digital businesses, local NAP and location checks are less relevant
+    // They should be scored on: schema presence, social proof/reviews, brand consistency
+    const isSaaS = businessType === 'saas';
+
+    const weights = isSaaS ? {
+      // SaaS/B2B: emphasise schema and reviews over NAP/location
+      localBusinessSchema: 15,  // Reduced (LocalBusiness schema is less critical for SaaS)
+      napConsistency: 10,        // Much reduced (no physical address expected)
+      googleBusinessProfile: 25, // Important even for SaaS — Google shows business in knowledge panel
+      locationKeywords: 10,      // Less important
+      geographicTargeting: 5,    // Largely irrelevant for SaaS
+      // Bonus weight for digital presence
+      digitalPresence: 35        // New: covers reviews mention, trust signals, online citations
+    } : {
+      // Traditional local business: full weight on NAP and location
       localBusinessSchema: 30,
       napConsistency: 30,
       googleBusinessProfile: 20,
       locationKeywords: 15,
-      geographicTargeting: 5
+      geographicTargeting: 5,
+      digitalPresence: 0
     };
 
     let totalScore = 0;
@@ -425,8 +477,10 @@ class LocalSEOAnalyzer {
     // LocalBusiness schema score
     if (this.checks.localBusinessSchema) {
       const score = this.checks.localBusinessSchema.found ? 100 : 0;
-      totalScore += score * weights.localBusinessSchema;
-      totalWeight += weights.localBusinessSchema;
+      if (weights.localBusinessSchema > 0) {
+        totalScore += score * weights.localBusinessSchema;
+        totalWeight += weights.localBusinessSchema;
+      }
     }
 
     // NAP consistency score
@@ -435,6 +489,8 @@ class LocalSEOAnalyzer {
       if (this.checks.napConsistency.hasPhone) score += 30;
       if (this.checks.napConsistency.hasAddress) score += 30;
       if (this.checks.napConsistency.isConsistent) score += 40;
+      // For SaaS, give partial credit even without physical NAP
+      if (isSaaS && score === 0) score = 40; // SaaS companies don't need phone/address
       totalScore += score * weights.napConsistency;
       totalWeight += weights.napConsistency;
     }
@@ -456,7 +512,7 @@ class LocalSEOAnalyzer {
     }
 
     // Geographic targeting score
-    if (this.checks.geographicTargeting) {
+    if (this.checks.geographicTargeting && weights.geographicTargeting > 0) {
       let score = 0;
       if (this.checks.geographicTargeting.hasLocationInTitle) score += 70;
       if (this.checks.geographicTargeting.hasGeoMeta) score += 30;
@@ -464,8 +520,22 @@ class LocalSEOAnalyzer {
       totalWeight += weights.geographicTargeting;
     }
 
-    const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
+    // Digital presence score (SaaS only)
+    if (isSaaS && weights.digitalPresence > 0) {
+      // Score based on what digital signals we CAN detect
+      let score = 40; // Base score for having a website
+      // Having some pages (blog, about, resources) is a positive signal
+      const pageCount = this.pages.length;
+      if (pageCount >= 5) score += 20;
+      if (pageCount >= 10) score += 20;
+      // Schema presence is a positive signal
+      const hasAnySchema = this.pages.some(p => (p.schemaTypes || []).length > 0);
+      if (hasAnySchema) score += 20;
+      totalScore += Math.min(100, score) * weights.digitalPresence;
+      totalWeight += weights.digitalPresence;
+    }
 
+    const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
     return Math.max(0, Math.min(100, finalScore));
   }
 

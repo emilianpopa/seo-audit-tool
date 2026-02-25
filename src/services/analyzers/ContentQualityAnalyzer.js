@@ -37,6 +37,7 @@ class ContentQualityAnalyzer {
       this.checkMultimediaPresence();
       this.checkEEATSignals();
       this.checkBlogFeaturedOnHomepage();
+      this.checkTrustSignals();
 
       // Calculate category score
       const categoryScore = this.calculateScore();
@@ -325,9 +326,9 @@ class ContentQualityAnalyzer {
     if (pagesWithFAQ.length === 0) {
       this.issues.push({
         type: 'no_faq_sections',
-        severity: 'low',
+        severity: 'medium',
         title: 'No FAQ Sections Detected',
-        description: 'No FAQ sections found. FAQ pages can improve user experience and SEO.',
+        description: 'No FAQ sections or FAQPage schema found on any page. FAQ content targets "People Also Ask" featured snippets and improves dwell time. This is a significant missed opportunity for organic traffic.',
         recommendation: 'Consider adding FAQ sections with FAQPage schema markup to relevant pages.',
         affectedPages: 0
       });
@@ -466,36 +467,104 @@ class ContentQualityAnalyzer {
    */
   checkBlogFeaturedOnHomepage() {
     const blogPages = this.pages.filter(p =>
-      /\/(blog|article|post|news)s?\//i.test(p.url || '')
+      /\/(blog|article|post|news|insights|resources?)s?\//i.test(p.url || '') &&
+      (p.title || '').length > 0
     );
 
     const homepage = this.pages.find(p =>
       p.path === '/' ||
-      (p.url || '').replace(/^https?:\/\/[^/]+/, '') === ''
+      (p.url || '').replace(/^https?:\/\/[^/]+\/?$/, '') === ''
+    );
+
+    // Check if homepage headings reference blog/news topics
+    const homepageH2s = (homepage?.h2Tags || []).map(h => h.toLowerCase());
+    const homepageBlogSignals = homepageH2s.some(h =>
+      /blog|news|article|insight|resource|learn|latest|recent/i.test(h)
     );
 
     this.checks.blogFeaturedOnHomepage = {
       blogPagesFound: blogPages.length,
+      blogTitles: blogPages.slice(0, 3).map(p => p.title || p.path),
       homepageFound: !!homepage,
-      status: (blogPages.length === 0 || !homepage || (homepage.h2Tags?.length ?? 0) >= 2) ? 'pass' : 'warning'
+      homepageBlogSignals,
+      status: (blogPages.length === 0 || homepageBlogSignals) ? 'pass' : 'warning'
     };
 
-    if (blogPages.length >= 3 && (!homepage || (homepage.h2Tags?.length ?? 0) < 2)) {
+    if (blogPages.length >= 2 && !homepageBlogSignals) {
+      const blogTitleExamples = blogPages.slice(0, 2).map(p => `"${p.title || p.path}"`).join(', ');
       this.issues.push({
         type: 'blog_not_featured_on_homepage',
-        severity: 'low',
-        title: 'Blog Content Not Featured on Homepage',
-        description: `${blogPages.length} blog pages were found but the homepage does not appear to surface recent blog content. Featuring blog content on the homepage improves engagement and internal linking.`,
-        recommendation: 'Add a "Recent Posts" or "Latest Articles" section to the homepage with links to your 3-5 most recent blog posts.',
-        affectedPages: 1
+        severity: 'medium',
+        title: 'Blog / Insights Not Featured on Homepage',
+        description: `${blogPages.length} blog/article pages found (e.g. ${blogTitleExamples}) but the homepage doesn't appear to surface recent content. Featuring blog posts on the homepage improves engagement, internal linking, and E-E-A-T signals.`,
+        recommendation: 'Add a "Recent Posts", "Latest Insights", or "From the Blog" section to your homepage featuring your 3 most recent articles with titles, dates, and links.',
+        affectedPages: 1,
+        evidence: blogPages.slice(0, 3).map(p => ({ url: p.url, detail: p.title || 'Blog post' }))
       });
     }
 
     logger.debug({
       auditId: this.auditId,
       blogPagesFound: blogPages.length,
-      homepageFound: !!homepage
+      homepageBlogSignals
     }, 'Blog featured on homepage checked');
+  }
+
+  /**
+   * Check for trust signals: testimonials, case studies, social proof, review sections
+   */
+  checkTrustSignals() {
+    const testimonialPatterns = /testimonial|review|case.?stud|client|customer|success.?stor/i;
+    const trustPagePaths = /\/(about|team|clients?|partners?|testimonials?|reviews?|case.?stud)/i;
+
+    const pagesWithTrustContent = this.pages.filter(p =>
+      trustPagePaths.test(p.path || '') ||
+      testimonialPatterns.test(p.title || '') ||
+      (p.h1Tags || []).some(h => testimonialPatterns.test(h)) ||
+      (p.h2Tags || []).some(h => testimonialPatterns.test(h))
+    );
+
+    const hasTestimonials = pagesWithTrustContent.some(p =>
+      /testimonial|review/i.test(p.path || '') || /testimonial|review/i.test(p.title || '')
+    );
+    const hasCaseStudies = pagesWithTrustContent.some(p =>
+      /case.?stud/i.test(p.path || '') || /case.?stud/i.test(p.title || '')
+    );
+    const hasAboutTeam = pagesWithTrustContent.some(p =>
+      /\/(about|team)/i.test(p.path || '')
+    );
+
+    this.checks.trustSignals = {
+      pagesWithTrustContent: pagesWithTrustContent.length,
+      hasTestimonials,
+      hasCaseStudies,
+      hasAboutTeam,
+      status: pagesWithTrustContent.length > 0 ? 'pass' : 'warning'
+    };
+
+    const missingSignals = [];
+    if (!hasTestimonials) missingSignals.push('customer testimonials with names and companies');
+    if (!hasCaseStudies) missingSignals.push('case studies with measurable results');
+    if (!hasAboutTeam) missingSignals.push('About / Team page showing real people');
+
+    if (missingSignals.length >= 2) {
+      this.issues.push({
+        type: 'weak_trust_signals',
+        severity: 'medium',
+        title: 'Weak Social Proof & Trust Signals',
+        description: `Missing: ${missingSignals.join('; ')}. Trust signals are a key E-E-A-T ranking factor — Google rewards sites that demonstrate real expertise and customer validation.`,
+        recommendation: 'Add named customer testimonials (with company + role), at least 3 case studies with specific metrics (e.g. "19% reduction in turnover"), and an About/Team page with real team member photos.',
+        affectedPages: 0,
+        evidence: [{ url: null, detail: 'Add trust content to validate expertise and build conversion trust' }]
+      });
+    }
+
+    logger.debug({
+      auditId: this.auditId,
+      pagesWithTrustContent: pagesWithTrustContent.length,
+      hasTestimonials,
+      hasCaseStudies
+    }, 'Trust signals checked');
   }
 
   /**
@@ -506,10 +575,11 @@ class ContentQualityAnalyzer {
     const weights = {
       contentVolume: 35,
       keywordCannibalization: 25, // Increased from 20 - this is critical
-      readability: 20,
+      readability: 15, // Reduced from 20 - check is simplistic
       faqSections: 5, // Reduced from 10 to accommodate eeatSignals
       multimediaPresence: 5, // Reduced from 10 to accommodate eeatSignals
-      eeatSignals: 10
+      eeatSignals: 10,
+      trustSignals: 5
     };
 
     let totalScore = 0;
@@ -569,6 +639,13 @@ class ContentQualityAnalyzer {
 
       totalScore += score * weights.eeatSignals;
       totalWeight += weights.eeatSignals;
+    }
+
+    // Trust signals score
+    if (this.checks.trustSignals) {
+      const score = this.checks.trustSignals.pagesWithTrustContent > 0 ? 100 : 30;
+      totalScore += score * weights.trustSignals;
+      totalWeight += weights.trustSignals;
     }
 
     const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
