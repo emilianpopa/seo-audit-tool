@@ -868,6 +868,43 @@
       font-style: italic;
       margin: 4pt 0 8pt;
     }
+
+    /* ── Table of Contents ───────────────────────────────────────────── */
+    .toc-table { width: 100%; border-collapse: collapse; margin: 12pt 0; font-size: 10pt; }
+    .toc-table th { background: #1e293b; color: white; padding: 8pt 10pt; font-size: 9pt; text-align: left; border: none; }
+    .toc-table td { padding: 8pt 10pt; border-bottom: 1pt solid #e5e7eb; vertical-align: top; }
+    .toc-num { font-weight: 700; color: #1e293b; font-size: 12pt; width: 28px; }
+    .toc-title { font-weight: 600; color: #1e293b; font-size: 10pt; }
+    .toc-desc { color: #64748b; font-size: 9pt; }
+
+    /* ── Category intro table (What IS NOT Working) ──────────────────── */
+    .category-summary-table { margin: 10pt 0 6pt 0; font-size: 9pt; }
+
+    /* ── Current State indicator ─────────────────────────────────────── */
+    .current-state-bar {
+      display: flex;
+      gap: 0;
+      margin: 6pt 0;
+      font-size: 8.5pt;
+      border: 1pt solid #e5e7eb;
+      border-radius: 3pt;
+      overflow: hidden;
+    }
+    .cs-current {
+      flex: 1;
+      padding: 5pt 7pt;
+      background: #fff5f5;
+      border-right: 1pt solid #fca5a5;
+    }
+    .cs-current-label { font-weight: 700; color: #b91c1c; font-size: 7.5pt; text-transform: uppercase; margin-bottom: 2pt; }
+    .cs-current-val { color: #374151; }
+    .cs-recommended {
+      flex: 1;
+      padding: 5pt 7pt;
+      background: #f0fdf4;
+    }
+    .cs-recommended-label { font-weight: 700; color: #15803d; font-size: 7.5pt; text-transform: uppercase; margin-bottom: 2pt; }
+    .cs-recommended-val { color: #374151; }
   </style>
 </head>
 <body>

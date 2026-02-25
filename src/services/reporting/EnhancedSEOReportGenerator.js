@@ -141,6 +141,8 @@ class EnhancedSEOReportGenerator {
     const sections = [];
     sections.push(this.buildCoverPage());
     sections.push('<div class="page-break"></div>');
+    sections.push(this.buildTableOfContents());
+    sections.push('<div class="page-break"></div>');
     sections.push(this.buildScoreBreakdown());
     sections.push('<div class="page-break"></div>');
     sections.push(this.buildWhatNotWorking());
@@ -157,6 +159,74 @@ class EnhancedSEOReportGenerator {
     sections.push('<div class="page-break"></div>');
     sections.push(this.buildActionSummary());
     return sections.join('\n');
+  }
+
+  buildTableOfContents() {
+    const domain = new URL(this.audit.targetUrl).hostname.replace('www.', '');
+    const totalIssues = this.audit.recommendations.length;
+    const criticalCount = this.audit.recommendations.filter(r => r.priority === 'CRITICAL').length;
+    const highCount = this.audit.recommendations.filter(r => r.priority === 'HIGH').length;
+    const mediumCount = this.audit.recommendations.filter(r => r.priority === 'MEDIUM').length;
+    const pageCount = this.audit.pages?.length || 0;
+
+    const toc = [
+      { num: '1', title: 'SEO Score Breakdown', desc: `Weighted scores across ${this.audit.results.length} categories with detailed analysis` },
+      { num: '2', title: 'What Is NOT Working', desc: `${totalIssues} issues found — ${criticalCount} critical, ${highCount} high, ${mediumCount} medium` },
+      { num: '3', title: 'What IS Working', desc: 'Confirmed strengths to preserve as you make improvements' },
+      { num: '4', title: 'What Needs to Change', desc: 'Prioritised fixes with implementation steps and before/after specifics' },
+      { num: '5', title: 'Other Website Improvements', desc: 'UX/UI, CRO, Content Strategy, Technical, and Analytics opportunities' },
+      { num: '6', title: 'Implementation Roadmap', desc: 'Week-by-week action plan with owner assignments (90-day horizon)' },
+      { num: '7', title: 'Expected Results', desc: 'Projected metric improvements at 30, 60, and 90 days post-implementation' },
+      { num: '8', title: 'Action Summary & Next Steps', desc: 'Immediate actions, success metrics, and recommended tools with costs' },
+    ];
+
+    let html = `<h1>Table of Contents</h1>
+<p>Comprehensive SEO audit for <strong>${this.escapeHTML(domain)}</strong> — ${pageCount} pages analysed, ${totalIssues} recommendations across ${this.audit.results.length} categories.</p>
+
+<table class="toc-table">
+  <thead><tr><th style="width:28px;">#</th><th style="width:35%;">Section</th><th>What You'll Find</th></tr></thead>
+  <tbody>`;
+
+    for (const item of toc) {
+      html += `<tr>
+      <td class="toc-num">${item.num}</td>
+      <td class="toc-title">${this.escapeHTML(item.title)}</td>
+      <td class="toc-desc">${this.escapeHTML(item.desc)}</td>
+    </tr>`;
+    }
+
+    html += `</tbody></table>
+
+<div class="highlight-box mt-2">
+  <strong>How to use this report:</strong> Start with Section 2 to see all identified issues. Jump to Section 4 for a
+  prioritised action plan with step-by-step implementation guidance. Use Section 6 to assign owners and schedule work
+  across a 90-day horizon. Track progress weekly against the metrics in Section 7.
+</div>
+
+<div class="priority-grid" style="margin-top:14pt;">
+  <div class="priority-box critical">
+    <div class="priority-box-title color-critical">CRITICAL</div>
+    <div class="priority-box-count color-critical">${criticalCount}</div>
+    <div class="priority-box-impact">Fix immediately — highest ROI</div>
+  </div>
+  <div class="priority-box high">
+    <div class="priority-box-title color-high">HIGH</div>
+    <div class="priority-box-count color-high">${highCount}</div>
+    <div class="priority-box-impact">Fix within 30 days</div>
+  </div>
+  <div class="priority-box medium">
+    <div class="priority-box-title color-medium">MEDIUM</div>
+    <div class="priority-box-count color-medium">${mediumCount}</div>
+    <div class="priority-box-impact">Fix within 60 days</div>
+  </div>
+  <div class="priority-box low">
+    <div class="priority-box-title color-low">${this.audit.recommendations.filter(r => r.priority === 'LOW').length}</div>
+    <div class="priority-box-count color-low">${this.audit.recommendations.filter(r => r.priority === 'LOW').length}</div>
+    <div class="priority-box-impact">Fix as capacity allows</div>
+  </div>
+</div>`;
+
+    return html;
   }
 
   // ─── SECTIONS ───────────────────────────────────────────────────────────────
@@ -242,20 +312,45 @@ class EnhancedSEOReportGenerator {
 
   buildWhatNotWorking() {
     const categoryGroups = [
-      { keys: ['TECHNICAL_SEO'],            title: 'A. Technical SEO' },
-      { keys: ['ON_PAGE_SEO'],              title: 'B. On-Page SEO' },
-      { keys: ['CONTENT_QUALITY'],          title: 'C. Content Quality' },
-      { keys: ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'], title: 'D. Authority & Local SEO' },
-      { keys: ['PERFORMANCE'],              title: 'E. Performance' },
+      { keys: ['TECHNICAL_SEO'],                    title: 'A. Technical SEO Issues' },
+      { keys: ['ON_PAGE_SEO'],                      title: 'B. On-Page SEO Issues' },
+      { keys: ['CONTENT_QUALITY'],                  title: 'C. Content Quality Issues' },
+      { keys: ['AUTHORITY_BACKLINKS', 'LOCAL_SEO'], title: 'D. Authority & Local SEO Issues' },
+      { keys: ['PERFORMANCE'],                      title: 'E. Performance Issues' },
     ];
 
+    const totalIssues = this.audit.recommendations.length;
+
     let html = `<h1>2. What Is NOT Working</h1>
-<p>Issues identified during the audit, grouped by category. Each includes specific evidence and recommended fix.</p>`;
+<p>${totalIssues} issues identified during the audit across ${categoryGroups.length} categories. Each includes specific evidence, a step-by-step fix, and expected impact.</p>`;
+
+    // Summary table
+    html += `<table class="category-summary-table">
+  <thead><tr><th>Category</th><th style="width:50px;text-align:center;">Issues</th><th style="width:60px;text-align:center;">Critical</th><th style="width:50px;text-align:center;">High</th><th style="width:60px;text-align:center;">Medium</th><th style="width:40px;text-align:center;">Low</th></tr></thead>
+  <tbody>`;
+    for (const group of categoryGroups) {
+      const issues = this.audit.recommendations.filter(r => group.keys.includes(r.category));
+      if (issues.length === 0) continue;
+      const c = issues.filter(r => r.priority === 'CRITICAL').length;
+      const h = issues.filter(r => r.priority === 'HIGH').length;
+      const m = issues.filter(r => r.priority === 'MEDIUM').length;
+      const l = issues.filter(r => r.priority === 'LOW').length;
+      html += `<tr>
+      <td>${this.escapeHTML(group.title)}</td>
+      <td style="text-align:center;font-weight:600;">${issues.length}</td>
+      <td style="text-align:center;" class="${c > 0 ? 'color-critical font-semibold' : ''}">${c > 0 ? c : '—'}</td>
+      <td style="text-align:center;" class="${h > 0 ? 'color-high font-semibold' : ''}">${h > 0 ? h : '—'}</td>
+      <td style="text-align:center;" class="${m > 0 ? 'color-medium font-semibold' : ''}">${m > 0 ? m : '—'}</td>
+      <td style="text-align:center;" class="${l > 0 ? 'color-low font-semibold' : ''}">${l > 0 ? l : '—'}</td>
+    </tr>`;
+    }
+    html += `</tbody></table>`;
 
     for (const group of categoryGroups) {
       const issues = this.audit.recommendations.filter(r => group.keys.includes(r.category));
       if (issues.length === 0) continue;
 
+      html += `<div class="page-break"></div>`;
       html += `<h2>${this.escapeHTML(group.title)}</h2>`;
       for (const issue of issues) {
         html += this.buildIssueCard(issue);
@@ -268,13 +363,31 @@ class EnhancedSEOReportGenerator {
   buildIssueCard(issue) {
     const severity = issue.priority.toLowerCase();
     const affectedPagesHtml = issue.affectedPages > 0
-      ? `<div class="text-sm text-gray">Affected pages: ${issue.affectedPages}</div>`
+      ? `<div class="text-sm text-gray" style="margin-bottom:4pt;">Affected pages: <strong>${issue.affectedPages}</strong></div>`
       : '';
-    const fixHtml = issue.implementation
-      ? `<div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(issue.implementation)}</div>`
-      : '';
+
+    // Current State → Recommended bar (shown when both description and implementation are available)
+    let currentStateHtml = '';
+    if (issue.description && issue.implementation) {
+      currentStateHtml = `<div class="current-state-bar">
+  <div class="cs-current">
+    <div class="cs-current-label">Current State</div>
+    <div class="cs-current-val">${this.escapeHTML(issue.description)}</div>
+  </div>
+  <div class="cs-recommended">
+    <div class="cs-recommended-label">Recommended Fix</div>
+    <div class="cs-recommended-val">${this.escapeHTML(issue.implementation)}</div>
+  </div>
+</div>`;
+    } else {
+      // Fallback individual elements
+      if (issue.implementation) {
+        currentStateHtml = `<div class="issue-fix"><strong>Fix:</strong> ${this.escapeHTML(issue.implementation)}</div>`;
+      }
+    }
+
     const impactHtml = issue.expectedImpact
-      ? `<div class="issue-impact">Impact: ${this.escapeHTML(issue.expectedImpact)}</div>`
+      ? `<div class="issue-impact">Expected impact: ${this.escapeHTML(issue.expectedImpact)}</div>`
       : '';
 
     const steps = this.getImplementationSteps(issue.title);
@@ -295,9 +408,8 @@ class EnhancedSEOReportGenerator {
     <span class="issue-title">${this.escapeHTML(issue.title)}</span>
     <span class="issue-severity ${severity}">${issue.priority}</span>
   </div>
-  <div class="issue-description">${this.escapeHTML(issue.description)}</div>
   ${affectedPagesHtml}
-  ${fixHtml}
+  ${currentStateHtml}
   ${stepsHtml}
   ${specificsHtml}
   ${impactHtml}
@@ -615,10 +727,15 @@ class EnhancedSEOReportGenerator {
     ];
 
     let html = `<h1>5. Other Website Improvements</h1>
-<p>Beyond core SEO, these improvements will enhance user experience, increase conversions, and establish your brand as a market leader.</p>
-<div class="improvements-body">`;
+<p>Beyond core SEO, these improvements will enhance user experience, increase conversions, and establish your brand as a market leader. Each sub-section stands alone — prioritise based on your current goals.</p>`;
 
+    let isFirst = true;
     for (const cat of categories) {
+      if (!isFirst) {
+        html += `<div class="page-break"></div>`;
+      }
+      isFirst = false;
+
       html += `<div class="improvement-category">
   <div class="improvement-cat-title">${this.escapeHTML(cat.title)}</div>
   <div class="improvement-grid">`;
@@ -635,7 +752,6 @@ class EnhancedSEOReportGenerator {
       html += `</div></div>`;
     }
 
-    html += `</div>`;
     return html;
   }
 
@@ -1242,55 +1358,159 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
 
   identifyStrengths() {
     const strengths = [];
+    const techResult = (this.audit.results || []).find(r => r.category === 'TECHNICAL_SEO');
+    const techChecks = techResult?.checks || {};
+    const onPageResult = (this.audit.results || []).find(r => r.category === 'ON_PAGE_SEO');
+    const onPageChecks = onPageResult?.checks || {};
+    const perfResult = (this.audit.results || []).find(r => r.category === 'PERFORMANCE');
+    const perfChecks = perfResult?.checks || {};
 
-    for (const result of this.audit.results) {
-      if (result.categoryScore >= 70) {
+    // ── Data-driven strengths from actual check results ──────────────
+
+    // SSL / HTTPS
+    if (techChecks.ssl?.hasSSL === true) {
+      strengths.push({
+        title: 'HTTPS / SSL Certificate Active',
+        description: 'All pages are served over HTTPS, satisfying Google\'s security requirement and protecting visitor data in transit.',
+        preserve: 'Monitor certificate expiry (via SSL Shopper or Cloudflare). Renew at least 30 days before expiry. Scan monthly for mixed-content warnings using Why No Padlock.'
+      });
+    }
+
+    // XML Sitemap
+    if (techChecks.sitemap?.exists === true) {
+      const urlCount = techChecks.sitemap.urlCount;
+      const sitemapUrl = techChecks.sitemap.url || '';
+      const urlNote = urlCount > 0 ? ` containing ${urlCount} URLs` : '';
+      strengths.push({
+        title: `XML Sitemap Present${urlCount > 0 ? ` (${urlCount} URLs indexed)` : ''}`,
+        description: `A valid XML sitemap was found${sitemapUrl ? ` at ${sitemapUrl.replace(/https?:\/\/[^/]+/, '')}` : ''}${urlNote}. This helps search engines discover and crawl all important pages efficiently.`,
+        preserve: 'Keep the sitemap auto-updating whenever new content is published. Ensure it\'s submitted in both Google Search Console and Bing Webmaster Tools. Keep each sitemap file under 50,000 URLs.'
+      });
+    }
+
+    // Robots.txt
+    if (techChecks.robotsTxt?.exists === true && !techChecks.robotsTxt?.hasDisallowAll) {
+      const hasSitemapRef = techChecks.robotsTxt?.hasSitemapReference;
+      strengths.push({
+        title: 'robots.txt Properly Configured',
+        description: `A valid robots.txt file exists that allows search engine crawlers to access the site${hasSitemapRef ? ' and includes a sitemap reference' : ''}. Correct robot directives prevent crawl waste.`,
+        preserve: 'Update this file whenever you add new subdirectories or subdomains. Never add "Disallow: /" in production. Always reference your sitemap URL at the bottom of the file.'
+      });
+    }
+
+    // Mobile Responsiveness
+    if (techChecks.mobileResponsive?.percentageOptimized >= 80) {
+      const pct = Math.round(techChecks.mobileResponsive.percentageOptimized);
+      strengths.push({
+        title: `Mobile-Responsive Design (${pct}% of pages pass)`,
+        description: `${pct}% of crawled pages passed mobile responsiveness checks. Google uses mobile-first indexing, meaning your mobile experience directly determines your search rankings.`,
+        preserve: 'Test on multiple screen sizes after every layout change. Use Google\'s Mobile-Friendly Test after updates. Ensure tap targets are at least 44×44px and text is legible at 16px without zooming.'
+      });
+    } else if (!techChecks.mobileResponsive) {
+      // Fallback if we didn't measure it
+      strengths.push({
+        title: 'Mobile-Responsive Design',
+        description: 'The site uses a responsive design framework ensuring usability across all device sizes — a core Google ranking factor since 2019.',
+        preserve: 'Continue testing on multiple devices after layout changes. Maintain a mobile-first approach to all new features.'
+      });
+    }
+
+    // Structured Data
+    if (techChecks.structuredData?.pagesWithSchema > 0) {
+      const pct = Math.round(techChecks.structuredData.percentageWithSchema || 0);
+      const count = techChecks.structuredData.pagesWithSchema;
+      strengths.push({
+        title: `Structured Data / Schema Markup (${pct}% of pages)`,
+        description: `Schema.org markup is present on ${count} pages (${pct}% of site). Structured data enables rich results in Google Search — stars, FAQs, breadcrumbs — that significantly increase click-through rates.`,
+        preserve: 'Validate all schema with Google\'s Rich Results Test after every update. Expand to remaining pages. Add FAQ, HowTo, and Review schema types to relevant content as it\'s created.'
+      });
+    }
+
+    // Canonical Tags
+    if (techChecks.canonicalTags?.percentageWithCanonical >= 80) {
+      const pct = Math.round(techChecks.canonicalTags.percentageWithCanonical);
+      strengths.push({
+        title: `Canonical Tags Implemented (${pct}% of pages)`,
+        description: `${pct}% of pages have canonical tags, preventing duplicate content penalties and consolidating link equity to preferred URLs.`,
+        preserve: 'Ensure canonical tags always use HTTPS and your preferred URL format (with or without trailing slash). Audit after any URL restructure with Screaming Frog.'
+      });
+    }
+
+    // On-Page: good internal linking
+    if (onPageChecks.internalLinks?.averageLinksPerPage >= 3) {
+      const avg = onPageChecks.internalLinks.averageLinksPerPage.toFixed(1);
+      strengths.push({
+        title: `Good Internal Linking (avg ${avg} links/page)`,
+        description: `Pages average ${avg} internal links, helping search engines discover content and distributing link equity across the site. Strong internal linking is a key on-page ranking factor.`,
+        preserve: 'Maintain at least 3–5 internal links per page. When publishing new content, always link to it from existing relevant pages. Use descriptive anchor text containing target keywords.'
+      });
+    }
+
+    // Performance: good scores
+    if (perfChecks.averageLoadTime && perfChecks.averageLoadTime < 3000) {
+      const ms = Math.round(perfChecks.averageLoadTime);
+      strengths.push({
+        title: `Acceptable Page Load Speed (avg ${ms}ms)`,
+        description: `Average page load time of ${ms}ms is within an acceptable range. Page speed is a confirmed Google ranking factor and directly impacts bounce rate and conversions.`,
+        preserve: 'Monitor PageSpeed Insights weekly. Re-test after plugin or theme updates. Keep Largest Contentful Paint (LCP) under 2.5s and Total Blocking Time (TBT) under 200ms.'
+      });
+    }
+
+    // ── Category-level strengths for high-scoring categories ────────
+    const preserveMap = {
+      'TECHNICAL_SEO': 'Maintain current technical setup. Re-run Screaming Frog crawls monthly. Monitor Core Web Vitals in Google Search Console.',
+      'ON_PAGE_SEO': 'Continue current on-page practices. Expand consistent title/meta/H1 patterns to every new page you publish.',
+      'CONTENT_QUALITY': 'Keep publishing high-quality content. Aim for 1,500+ words on key service pages. Update older posts with fresh statistics annually.',
+      'PERFORMANCE': 'Monitor page speed weekly via PageSpeed Insights. Re-test after any major plugin or theme updates.',
+      'AUTHORITY_BACKLINKS': 'Continue link-building efforts. Diversify anchor text and referring domains. Disavow toxic links quarterly using Google\'s disavow tool.',
+      'LOCAL_SEO': 'Keep Google Business Profile updated weekly. Respond to all reviews within 24 hours. Add new photos monthly to signal activity.',
+    };
+
+    for (const result of (this.audit.results || [])) {
+      if (result.categoryScore >= 75 && strengths.length < 9) {
         const cat = this.formatCategoryName(result.category);
-        const preserveMap = {
-          'TECHNICAL_SEO': 'Maintain current technical setup. Keep monitoring Core Web Vitals in Google Search Console.',
-          'ON_PAGE_SEO': 'Continue current on-page practices. Expand to new pages as you create them.',
-          'CONTENT_QUALITY': 'Keep publishing high-quality content. Aim for 1,500+ words on key service pages.',
-          'PERFORMANCE': 'Monitor page speed weekly. Re-test after any major updates.',
-          'AUTHORITY_BACKLINKS': 'Continue link-building efforts. Diversify anchor text and referring domains.',
-          'LOCAL_SEO': 'Keep Google Business Profile updated. Respond to reviews promptly.',
-        };
-        strengths.push({
-          title: `Strong ${cat} (${result.categoryScore}/100)`,
-          description: `Your ${cat.toLowerCase()} performance is solid. Continue current practices and build on this foundation.`,
-          preserve: preserveMap[result.category] || 'Continue current practices.'
-        });
+        // Avoid duplicating a strength already added from check data
+        const alreadyCovered = strengths.some(s =>
+          (result.category === 'TECHNICAL_SEO' && s.title.includes('SSL')) ||
+          (result.category === 'TECHNICAL_SEO' && s.title.includes('Sitemap'))
+        );
+        if (!alreadyCovered) {
+          strengths.push({
+            title: `Strong ${cat} Score (${result.categoryScore}/100)`,
+            description: `Your ${cat.toLowerCase()} score of ${result.categoryScore}/100 is above average. This is a solid foundation — the remaining improvements in this report will push it higher.`,
+            preserve: preserveMap[result.category] || 'Continue current practices and monitor for regressions.'
+          });
+        }
       }
     }
 
+    // ── Generic fallbacks (only added if we still need more items) ───
     const generic = [
       {
-        title: 'HTTPS Security',
-        description: 'Site uses HTTPS, meeting Google\'s security requirements and protecting user data.',
-        preserve: 'Maintain your SSL certificate and monitor for mixed content warnings. Renew before expiry.'
-      },
-      {
-        title: 'Mobile-Responsive Design',
-        description: 'Responsive design ensures usability across all devices — a core Google ranking factor.',
-        preserve: 'Continue testing on multiple devices after layout changes. Maintain a mobile-first approach.'
-      },
-      {
         title: 'Clear Site Architecture',
-        description: 'Logical page hierarchy makes it easy for both users and search engine crawlers to navigate.',
-        preserve: 'Maintain this structure as you add new pages. Add breadcrumb navigation for enhanced UX and SEO.'
+        description: 'Logical page hierarchy makes it easy for both users and search engine crawlers to navigate the site efficiently.',
+        preserve: 'Maintain this structure as you add new pages. Add breadcrumb navigation to enhance UX and provide additional structured data signals.'
       },
       {
         title: 'Social Media Integration',
-        description: 'Social profiles and sharing signals support multi-channel brand visibility and referral traffic.',
-        preserve: 'Ensure all social profiles are active and link back to the website. Use consistent branding across platforms.'
+        description: 'Social profiles and sharing signals support multi-channel brand visibility and referral traffic to the site.',
+        preserve: 'Ensure all social profiles are active and link back to the website. Use consistent branding and NAP (Name, Address, Phone) across all platforms.'
       },
       {
         title: 'Multiple Conversion Points',
-        description: 'Multiple CTAs and contact options throughout the site increase opportunities for visitors to convert.',
-        preserve: 'Keep these CTAs but A/B test copy and colour variations to continually improve click-through rates.'
+        description: 'Multiple CTAs and contact options throughout the site create numerous opportunities for visitors to take action.',
+        preserve: 'Keep these CTAs visible but A/B test copy and colour variations. Don\'t remove CTAs without testing replacement variants first.'
       },
     ];
 
-    return [...strengths, ...generic].slice(0, 10);
+    for (const g of generic) {
+      if (strengths.length >= 9) break;
+      if (g.title === 'HTTPS Security' && strengths.some(s => s.title.includes('HTTPS'))) continue;
+      if (g.title.includes('Mobile') && strengths.some(s => s.title.includes('Mobile'))) continue;
+      strengths.push(g);
+    }
+
+    return strengths.slice(0, 9);
   }
 
   getScoreColorClass(score) {
