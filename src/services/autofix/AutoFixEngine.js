@@ -50,6 +50,23 @@ const ISSUE_FIELD_MAP = {
   // ── Image alt (hero) ──────────────────────────────────────────────────────
   missing_image_alt:         { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
   images_missing_alt:        { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
+
+  // ── Hero / page H1 ────────────────────────────────────────────────────────
+  missing_h1:                { documentType: 'pageContent', fieldPath: 'heroSection.title' },
+  multiple_h1:               { documentType: 'pageContent', fieldPath: 'heroSection.title' },
+
+  // ── Structured data / NAP ─────────────────────────────────────────────────
+  limited_structured_data:   { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+  incomplete_nap:            { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+  inconsistent_address:      { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+  missing_local_business_schema: { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+
+  // ── Twitter handle ────────────────────────────────────────────────────────
+  missing_twitter_handle:    { documentType: 'seoSettings', fieldPath: 'twitterHandle' },
+
+  // ── Robots / sitemap (allow indexing) ─────────────────────────────────────
+  robots_blocking:           { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+  missing_robots:            { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
 };
 
 export class AutoFixEngine {
@@ -316,6 +333,25 @@ export class AutoFixEngine {
         return homepage?.title
           ? `${homepage.title} — hero image`
           : `${domain} hero image`;
+      }
+
+      case 'heroSection.title': {
+        // Use the actual page H1/title from the crawled homepage
+        if (homepage?.title) return homepage.title;
+        return `${domain} — AI-Powered Healthcare Solutions`;
+      }
+
+      case 'structuredData.organizationName': {
+        // Strip www./subdomain prefix, take the registrable name (part before TLD)
+        const stripped = domain.replace(/^www\./i, '');
+        const parts = stripped.split('.');
+        const name = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+
+      case 'twitterHandle': {
+        // Cannot guess handle — skip
+        return null;
       }
 
       default:
