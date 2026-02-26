@@ -66,6 +66,7 @@ const ISSUE_FIELD_MAP = {
 
   // ── Robots / sitemap (allow indexing) ─────────────────────────────────────
   robots_blocking:           { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+  robots_blocks_all:         { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
   missing_robots:            { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
 };
 
@@ -122,6 +123,8 @@ export class AutoFixEngine {
           currentValue,
         });
         if (!proposedValue) continue;
+        // Skip no-op: proposed value is identical to what's already in Sanity
+        if (String(proposedValue).trim() === String(currentValue ?? '').trim()) continue;
 
         fixes.push({
           auditId,
