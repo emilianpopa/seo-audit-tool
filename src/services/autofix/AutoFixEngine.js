@@ -345,7 +345,9 @@ export class AutoFixEngine {
       }
 
       case 'structuredData.organizationName': {
-        // Strip www./subdomain prefix, take the registrable name (part before TLD)
+        // Only suggest a name when the field is truly empty — a domain-derived
+        // guess cannot improve an existing value (e.g. "Expand Health" → "Expandhealth")
+        if (currentValue) return null;
         const stripped = domain.replace(/^www\./i, '');
         const parts = stripped.split('.');
         const name = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
