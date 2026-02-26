@@ -265,7 +265,7 @@ class LocalSEOAnalyzer {
       status: hasGoogleMapsEmbed ? 'pass' : 'warning'
     };
 
-    if (!hasGoogleMapsEmbed) {
+    if (!hasGoogleMapsEmbed && this.detectBusinessType() !== 'saas') {
       this.issues.push({
         type: 'no_google_maps',
         severity: 'medium',
@@ -333,7 +333,7 @@ class LocalSEOAnalyzer {
       status: percentageWithLocation >= 30 ? 'pass' : 'warning'
     };
 
-    if (percentageWithLocation < 30) {
+    if (percentageWithLocation < 30 && this.detectBusinessType() !== 'saas') {
       this.issues.push({
         type: 'missing_location_keywords',
         severity: 'medium',
@@ -389,7 +389,7 @@ class LocalSEOAnalyzer {
       status: hasLocationInTitle ? 'pass' : 'info'
     };
 
-    if (!hasLocationInTitle) {
+    if (!hasLocationInTitle && this.detectBusinessType() !== 'saas') {
       this.issues.push({
         type: 'no_location_in_title',
         severity: 'low',
