@@ -110,7 +110,7 @@ router.get('/:auditId/review', async (req, res, next) => {
                             : fix.status === 'FAILED'    ? '⚠ Failed — retry below'
                             : 'Pending review';
 
-          const canAct = fix.status === 'PENDING' || fix.status === 'FAILED';
+          const canAct = fix.status === 'PENDING' || fix.status === 'FAILED' || fix.status === 'APPROVED';
           const draftBtn = canAct
             ? `<button class="btn-fix" data-fix-id="${fix.id}" onclick="applyFix(this)" title="Creates a draft in Sanity Studio for review before publishing">Fix it (draft) →</button>`
             : '';
@@ -121,10 +121,14 @@ router.get('/:auditId/review', async (req, res, next) => {
             ? `<button class="btn-reject" data-fix-id="${fix.id}" onclick="rejectFix(this)">Dismiss</button>`
             : '';
 
+          const toggleLabel = fix.status === 'PUBLISHED' ? '&#x26A1; Auto-applied &#x2014; live on website'
+                            : fix.status === 'APPLIED'   ? '&#x2713; Draft created in Studio'
+                            : '&#x1F4A1; Proposal available';
+
           proposalHtml = `
             <div class="proposal-toggle" onclick="toggleProposal(this)">
-              <span class="proposal-label">💡 Proposal available</span>
-              <span class="proposal-arrow">▾</span>
+              <span class="proposal-label">${toggleLabel}</span>
+              <span class="proposal-arrow">&#x25BE;</span>
             </div>
             <div class="proposal-body" style="display:none">
               <div class="proposal-field">Field: <code>${escHtml(fix.fieldPath)}</code> <span class="fix-status ${statusClass}">${statusLabel}</span></div>
@@ -175,11 +179,11 @@ router.get('/:auditId/review', async (req, res, next) => {
                        : audit.overallScore >= 50 ? '#d97706'
                        : '#dc2626';
 
-    const fixableCount  = fixes.filter(f => f.status === 'PENDING' || f.status === 'FAILED').length;
+    const fixableCount  = fixes.filter(f => f.status === 'PENDING' || f.status === 'FAILED' || f.status === 'APPROVED').length;
     const appliedCount  = fixes.filter(f => f.status === 'APPLIED').length;
     const publishedCount = fixes.filter(f => f.status === 'PUBLISHED').length;
     const fixableIds    = fixes
-      .filter(f => f.status === 'PENDING' || f.status === 'FAILED')
+      .filter(f => f.status === 'PENDING' || f.status === 'FAILED' || f.status === 'APPROVED')
       .map(f => f.id);
 
     const html = `<!DOCTYPE html>
@@ -266,6 +270,11 @@ router.get('/:auditId/review', async (req, res, next) => {
   .fix-feedback.success { color: #16a34a; }
   .fix-feedback.error   { color: #dc2626; }
 
+  /* Auto-applied banner */
+  .autoapplied-banner { background: #ede9fe; border-left: 4px solid #7c3aed; padding: 12px 20px; margin: 0; font-size: 13px; color: #4c1d95; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .autoapplied-banner strong { color: #3b0764; }
+  .autoapplied-banner a { color: #6d28d9; font-weight: 600; }
+
   @media (max-width: 600px) {
     .proposal-values { grid-template-columns: 1fr; }
     .val-arrow { display: none; }
@@ -290,6 +299,12 @@ router.get('/:auditId/review', async (req, res, next) => {
     ${fixableCount > 0 ? `<button class="btn-fix-all" onclick="fixAll(this)" data-ids="${escHtml(JSON.stringify(fixableIds))}">⚡ Publish all live (${fixableCount})</button>` : ''}
   </div>
 </div>
+
+${publishedCount > 0 ? `
+<div class="autoapplied-banner">
+  <span>&#x26A1;</span>
+  <span><strong>${publishedCount} fix${publishedCount !== 1 ? 'es were' : ' was'} automatically applied</strong> to Sanity because the fields were empty — changes are live on the website. Expand the <em>Auto-applied</em> accordions below to review what was changed.</span>
+</div>` : ''}
 
 <div class="main">
   ${categorySections || '<p>No issues found.</p>'}
@@ -417,6 +432,9 @@ function _hideOtherActions(activeBtn, fixId) {
 </body>
 </html>`;
 
+    // Allow inline scripts/styles on this admin-only page
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
