@@ -36,11 +36,29 @@ export class SanityCMSAdapter {
 
   /**
    * Patch a document with a set of field changes.
-   * Creates a draft ("drafts.<docId>") — original published doc is untouched.
+   * Always targets the draft version ("drafts.<docId>") so the published
+   * document is untouched until the user reviews and publishes in Studio.
    */
   async patchDocument(docId, setFields) {
+    // Normalise to the draft ID so we never overwrite a live published doc
+    const draftId = docId.startsWith('drafts.') ? docId : `drafts.${docId}`;
     const result = await this.client
-      .patch(docId)
+      .patch(draftId)
+      .set(setFields)
+      .commit({ autoGenerateArrayKeys: true });
+    return result;
+  }
+
+  /**
+   * Apply a field change directly to the published document AND publish it live.
+   * Skips the draft — the change is immediately visible on the live site.
+   * Use only for unambiguous fixes (canonical URL, meta tags, etc.).
+   */
+  async publishDocument(docId, setFields) {
+    // Strip drafts. prefix — we write directly to the published document
+    const publishedId = docId.replace(/^drafts\./, '');
+    const result = await this.client
+      .patch(publishedId)
       .set(setFields)
       .commit({ autoGenerateArrayKeys: true });
     return result;

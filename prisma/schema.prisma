@@ -278,6 +278,7 @@ model AutoFix {
   // Workflow
   status        AutoFixStatus @default(PENDING)
   appliedAt     DateTime?
+  publishedAt   DateTime?     // set when published live (status = PUBLISHED)
   errorMessage  String?
 
   createdAt     DateTime      @default(now())
@@ -291,6 +292,7 @@ enum AutoFixStatus {
   PENDING
   APPROVED
   REJECTED
-  APPLIED
+  APPLIED    // draft created in Sanity Studio
+  PUBLISHED  // applied directly to live published document
   FAILED
 }

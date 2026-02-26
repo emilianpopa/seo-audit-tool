@@ -10,28 +10,46 @@ const prisma = new PrismaClient();
 // documentType = Sanity _type value, fieldPath = dot-notation field path
 // ============================================================================
 const ISSUE_FIELD_MAP = {
-  // Meta description issues → seoSettings.metaDescription
-  missing_meta_description: { documentType: 'seoSettings', fieldPath: 'metaDescription' },
-  description_too_short:    { documentType: 'seoSettings', fieldPath: 'metaDescription' },
-  description_too_long:     { documentType: 'seoSettings', fieldPath: 'metaDescription' },
+  // ── Meta description ──────────────────────────────────────────────────────
+  missing_meta_description:  { documentType: 'seoSettings', fieldPath: 'metaDescription' },
+  missing_meta_descriptions: { documentType: 'seoSettings', fieldPath: 'metaDescription' },
+  description_too_short:     { documentType: 'seoSettings', fieldPath: 'metaDescription' },
+  description_too_long:      { documentType: 'seoSettings', fieldPath: 'metaDescription' },
 
-  // Title issues → seoSettings.metaTitle
-  missing_title:            { documentType: 'seoSettings', fieldPath: 'metaTitle' },
-  title_missing:            { documentType: 'seoSettings', fieldPath: 'metaTitle' },
-  title_too_short:          { documentType: 'seoSettings', fieldPath: 'metaTitle' },
-  title_too_long:           { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  // ── Page title ────────────────────────────────────────────────────────────
+  missing_title:             { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  missing_title_tags:        { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  title_missing:             { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  title_too_short:           { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  title_too_long:            { documentType: 'seoSettings', fieldPath: 'metaTitle' },
 
-  // OG tags → seoSettings.ogTitle + seoSettings.ogDescription
-  missing_og_tags:          { documentType: 'seoSettings', fieldPath: 'ogTitle' },
-  missing_og_description:   { documentType: 'seoSettings', fieldPath: 'ogDescription' },
+  // ── Open Graph ────────────────────────────────────────────────────────────
+  missing_og_tags:           { documentType: 'seoSettings', fieldPath: 'ogTitle' },
+  missing_og_title:          { documentType: 'seoSettings', fieldPath: 'ogTitle' },
+  missing_og_description:    { documentType: 'seoSettings', fieldPath: 'ogDescription' },
 
-  // Canonical → seoSettings.canonicalUrl
-  missing_canonical:        { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
-  canonical_mismatch:       { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+  // ── Twitter card ──────────────────────────────────────────────────────────
+  missing_twitter_tags:      { documentType: 'seoSettings', fieldPath: 'twitterCardType' },
+  missing_twitter_card:      { documentType: 'seoSettings', fieldPath: 'twitterCardType' },
 
-  // Image alt → pageContent hero (homepage images)
-  missing_image_alt:        { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
-  images_missing_alt:       { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
+  // ── Canonical URL ─────────────────────────────────────────────────────────
+  missing_canonical:         { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+  missing_canonical_tags:    { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+  canonical_mismatch:        { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+  wrong_canonical_tags:      { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+
+  // ── Robots indexing ───────────────────────────────────────────────────────
+  noindex_set:               { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+  robots_noindex:            { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+
+  // ── Analytics IDs ─────────────────────────────────────────────────────────
+  missing_ga:                { documentType: 'seoSettings', fieldPath: 'googleAnalyticsId' },
+  missing_google_analytics:  { documentType: 'seoSettings', fieldPath: 'googleAnalyticsId' },
+  missing_gtm:               { documentType: 'seoSettings', fieldPath: 'googleTagManagerId' },
+
+  // ── Image alt (hero) ──────────────────────────────────────────────────────
+  missing_image_alt:         { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
+  images_missing_alt:        { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
 };
 
 export class AutoFixEngine {
@@ -176,6 +194,43 @@ export class AutoFixEngine {
   }
 
   // ============================================================================
+  // PUBLISH FIX
+  // Applies a fix directly to the live published Sanity document — no draft,
+  // no Studio step required. Use for unambiguous, safe changes only.
+  // ============================================================================
+  async publishFix(fixId) {
+    const fix = await prisma.autoFix.findUnique({ where: { id: fixId } });
+    if (!fix) throw new Error(`Fix ${fixId} not found`);
+    if (fix.status === 'PUBLISHED') return { success: true, message: 'Already published live.', fieldPath: fix.fieldPath, documentId: fix.documentId };
+    if (fix.status === 'REJECTED') throw new Error(`Fix ${fixId} has been rejected`);
+    if (!fix.documentId) throw new Error(`Fix ${fixId} has no Sanity documentId`);
+
+    try {
+      const setFields = SanityCMSAdapter.buildSetObject(fix.fieldPath, fix.proposedValue);
+      await this.adapter.publishDocument(fix.documentId, setFields);
+
+      await prisma.autoFix.update({
+        where: { id: fixId },
+        data: { status: 'PUBLISHED', appliedAt: new Date(), publishedAt: new Date(), errorMessage: null },
+      });
+
+      logger.info({ fixId, fieldPath: fix.fieldPath, docId: fix.documentId }, 'AutoFix published live to Sanity');
+      return {
+        success: true,
+        message: 'Fix published live. The change is now on your website.',
+        fieldPath: fix.fieldPath,
+        documentId: fix.documentId,
+      };
+    } catch (err) {
+      await prisma.autoFix.update({
+        where: { id: fixId },
+        data: { status: 'FAILED', errorMessage: err.message },
+      });
+      throw err;
+    }
+  }
+
+  // ============================================================================
   // HELPERS
   // ============================================================================
 
@@ -238,6 +293,23 @@ export class AutoFixEngine {
 
       case 'canonicalUrl': {
         return `https://${domain}/`;
+      }
+
+      case 'twitterCardType': {
+        return 'summary_large_image';
+      }
+
+      case 'robotsSettings.index': {
+        return true;
+      }
+
+      case 'googleAnalyticsId': {
+        // Cannot guess the GA ID — return null so no fix is proposed
+        return null;
+      }
+
+      case 'googleTagManagerId': {
+        return null;
       }
 
       case 'heroSection.image.alt': {
