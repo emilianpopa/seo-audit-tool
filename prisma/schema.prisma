@@ -50,6 +50,7 @@ model SeoAudit {
   results          SeoAuditResult[]
   pages            SeoAuditPage[]
   recommendations  SeoAuditRecommendation[]
+  autofixes        AutoFix[]
 
   @@index([userId, status])
   @@index([createdAt(sort: Desc)])
@@ -233,4 +234,65 @@ model User {
 
   @@index([email])
   @@index([apiKey])
+}
+
+// ============================================================================
+// CMS AUTO-FIX ENGINE
+// ============================================================================
+
+model CMSConfig {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  adapter   String   @default("sanity")
+  projectId String
+  dataset   String   @default("production")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([domain])
+}
+
+model AutoFix {
+  id            String        @id @default(cuid())
+  auditId       String
+  audit         SeoAudit      @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  // Issue that triggered this fix
+  issueType     String
+  severity      String
+
+  // Human-readable description
+  title         String
+  description   String?       @db.Text
+
+  // Sanity target
+  documentType  String        // e.g. 'seoSettings' | 'pageContent'
+  documentId    String?       // Sanity document _id (resolved at generate time)
+  fieldPath     String        // e.g. 'metaDescription' | 'heroSection.image.alt'
+
+  // Values
+  currentValue  String?       @db.Text
+  proposedValue String        @db.Text
+
+  // Workflow
+  status        AutoFixStatus @default(PENDING)
+  appliedAt     DateTime?
+  publishedAt   DateTime?     // set when published live (status = PUBLISHED)
+  errorMessage  String?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([auditId, status])
+  @@index([status])
+}
+
+enum AutoFixStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED    // draft created in Sanity Studio
+  PUBLISHED  // applied directly to live published document
+  FAILED
 }

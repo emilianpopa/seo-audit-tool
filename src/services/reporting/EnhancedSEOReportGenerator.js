@@ -854,8 +854,10 @@ class EnhancedSEOReportGenerator {
     let quickWinsRows = '';
     quickWins.forEach((t, i) => {
       const owner = ownerForCategory(t.category);
+      const dayNum = Math.min(Math.floor(i / 2) + 1, 7);
+      const showDayLabel = (i % 2 === 0) || dayNum === 7; // show "Day X" on first task of each day
       quickWinsRows += `<tr>
-        <td style="width:30px;color:#64748b;font-weight:600;">${i + 1}</td>
+        <td style="width:42px;color:#64748b;font-weight:700;white-space:nowrap;">${showDayLabel ? `Day ${dayNum}` : ''}</td>
         <td>${this.escapeHTML(t.title)} <span class="owner-badge ${owner.cls}">${owner.label}</span></td>
         <td style="white-space:nowrap;color:#16a34a;font-weight:600;">${this.escapeHTML(t.expectedImpact || 'Quick improvement')}</td>
       </tr>`;
@@ -1541,6 +1543,9 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     for (const result of (this.audit.results || [])) {
       if (result.categoryScore >= 75 && strengths.length < 9) {
         const cat = this.formatCategoryName(result.category);
+        // Skip generic ON_PAGE_SEO and CONTENT_QUALITY score fillers — not meaningful qualitative strengths
+        const isGenericFiller = result.category === 'ON_PAGE_SEO' || result.category === 'CONTENT_QUALITY';
+        if (isGenericFiller && !(strengths.length < 3 && result.categoryScore > 85)) continue;
         // Avoid duplicating a strength already added from check data
         const alreadyCovered = strengths.some(s =>
           (result.category === 'TECHNICAL_SEO' && s.title.includes('SSL')) ||
@@ -1583,11 +1588,37 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
         /thrive|transform|power|revolution|future|success|growth|close.*gap|upskill/i.test(h)
       );
 
+      // Extract a memorable quote from the page body using plain-text sentence matching
+      let quote = '';
+      if (homepage.htmlSnapshot) {
+        // Strip HTML tags and collapse whitespace to get plain text
+        const plainText = homepage.htmlSnapshot
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        // Find sentences with emotional/benefit language (30–140 chars)
+        const sentences = plainText.match(/[A-Z][^.!?\n]{28,138}[.!?]/g) || [];
+        const emotional = sentences.find(s =>
+          /thrive|crisis|not just here|survive|transform|empower|skills gap|workforce|future of|revolution|we'?re here/i.test(s)
+        );
+        if (emotional) quote = emotional.trim();
+      }
+
       if (engagingH2 && strengths.length < 10) {
         strengths.push({
           title: 'Engaging Section Headings',
-          description: `Benefit-driven headings like "${engagingH2}" demonstrate clear value proposition and use emotional hooks that improve dwell time. Strong headings also help Google understand page structure and relevance.`,
+          description: `Benefit-driven headings like "${engagingH2}" demonstrate clear value proposition and use emotional hooks that improve dwell time. Strong headings also help Google understand page structure and relevance.${quote ? ` The page also contains compelling body copy: "${quote}"` : ''}`,
           preserve: 'Continue writing H2s as outcome statements, not just topic labels. "Close the Skills Gap with AI-Powered Pathing" outranks "Our Features" for both users and search engines.'
+        });
+      } else if (quote && strengths.length < 10) {
+        // Use extracted emotional quote as evidence of copywriting quality
+        strengths.push({
+          title: 'Engaging Copywriting',
+          description: `The homepage contains compelling, benefit-driven copy: "${quote}" — emotional language like this builds trust, reduces bounce rate, and differentiates the brand from generic competitors.`,
+          preserve: 'Preserve and amplify this voice across all pages. Ensure benefit-driven language appears above the fold on every key landing page. A/B test emotional vs. functional copy variants to find what converts best.'
         });
       } else if (metaDesc && metaDesc.length > 80 && !metaDesc.includes('Learn more on') && strengths.length < 10) {
         // Use meta description as evidence of copywriting quality
@@ -1619,8 +1650,8 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
       /testimonial|case stud|client success|customer story/i.test(p.title || '')
     );
     // Also check homepage HTML for testimonial content
-    const homepageHasTestimonials = homepage && homepage.html &&
-      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.html);
+    const homepageHasTestimonials = homepage && homepage.htmlSnapshot &&
+      /testimonial|"[^"]{10,}"\s*[-—]\s*[A-Z][a-z]|blockquote|client.?says|customer.?review/i.test(homepage.htmlSnapshot);
 
     if ((trustPages.length > 0 || homepageHasTestimonials) && strengths.length < 10) {
       const source = trustPages.length > 0
@@ -1647,13 +1678,13 @@ ${month3.length > 0 ? `<div class="roadmap-phase">
     }
 
     // Multiple conversion points (CTAs, forms, newsletter signup)
-    if (homepage && homepage.html && strengths.length < 10) {
+    if (homepage && homepage.htmlSnapshot && strengths.length < 10) {
       const ctaSignals = [
-        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.html),
-        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.html),
-        /<form[\s>]/i.test(homepage.html),
-        /newsletter|subscribe/i.test(homepage.html),
-        /contact.?us|get.?in.?touch/i.test(homepage.html)
+        /sign.?up|get.?started|free.?trial|start.?free|try.?free/i.test(homepage.htmlSnapshot),
+        /book.?demo|request.?demo|schedule.?demo|get.?demo/i.test(homepage.htmlSnapshot),
+        /<form[\s>]/i.test(homepage.htmlSnapshot),
+        /newsletter|subscribe/i.test(homepage.htmlSnapshot),
+        /contact.?us|get.?in.?touch/i.test(homepage.htmlSnapshot)
       ].filter(Boolean).length;
 
       if (ctaSignals >= 2) {

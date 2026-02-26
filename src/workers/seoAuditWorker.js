@@ -11,6 +11,7 @@ import ContentQualityAnalyzer from '../services/analyzers/ContentQualityAnalyzer
 import PerformanceAnalyzer from '../services/analyzers/PerformanceAnalyzer.js';
 import AuthorityAnalyzer from '../services/analyzers/AuthorityAnalyzer.js';
 import LocalSEOAnalyzer from '../services/analyzers/LocalSEOAnalyzer.js';
+import { AutoFixEngine } from '../services/autofix/AutoFixEngine.js';
 
 /**
  * Process SEO Audit Job
@@ -88,7 +89,8 @@ async function processAudit(job) {
           hasSchema: page.hasSchema || false,
           schemaTypes: page.schemaTypes || [],
           openGraphTags: page.openGraphTags || null,
-          twitterTags: page.twitterTags || null
+          twitterTags: page.twitterTags || null,
+          htmlSnapshot: page.html ? page.html.slice(0, 500000) : null
         }
       });
     }
@@ -288,6 +290,24 @@ async function processAudit(job) {
       overallScore,
       pagesCrawled: crawledPages.length
     }, 'Audit completed successfully');
+
+    // ========================================================================
+    // STEP 12: Auto-generate Sanity CMS fix proposals (if token is configured)
+    // ========================================================================
+    if (process.env.SANITY_API_TOKEN) {
+      try {
+        const engine = new AutoFixEngine({
+          projectId: process.env.SANITY_PROJECT_ID || 'rtt3hnlz',
+          dataset:   process.env.SANITY_DATASET   || 'production',
+          token:     process.env.SANITY_API_TOKEN,
+        });
+        const fixCount = await engine.generateFixes(auditId);
+        logger.info({ auditId, fixCount }, 'AutoFix proposals generated');
+      } catch (fixErr) {
+        // Non-fatal — log and continue
+        logger.warn({ err: fixErr, auditId }, 'AutoFix generation failed (non-fatal)');
+      }
+    }
 
     return {
       auditId,
