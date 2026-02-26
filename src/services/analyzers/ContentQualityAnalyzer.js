@@ -542,7 +542,7 @@ class ContentQualityAnalyzer {
         description: `${pagesLacking.length} substantial page(s) lack visible credibility signals such as author attribution, publication dates, or supporting media. Google's E-E-A-T guidelines reward demonstrable expertise.`,
         recommendation: 'Add author bylines, publication/update dates, and supporting images or citations to key content pages. Consider adding an "About the Author" section.',
         affectedPages: pagesLacking.length,
-        examples: pagesLacking.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words, no author/date signals` }))
+        evidence: pagesLacking.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words, no author/date signals` }))
       });
     }
 

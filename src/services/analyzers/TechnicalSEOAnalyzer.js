@@ -568,7 +568,7 @@ class TechnicalSEOAnalyzer {
         description: `${suspectedJSPages.length} page(s) appear to have minimal crawlable content, suggesting JavaScript may be required to render key content. Search engines may not index this content.`,
         recommendation: 'Ensure all important page content is available in the static HTML. Use server-side rendering (SSR) or pre-rendering for JavaScript-heavy pages.',
         affectedPages: suspectedJSPages.length,
-        examples: suspectedJSPages.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words crawled` }))
+        evidence: suspectedJSPages.slice(0, 5).map(p => ({ url: p.url, detail: `${p.wordCount} words crawled` }))
       });
     }
 
