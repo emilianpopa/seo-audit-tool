@@ -270,6 +270,7 @@ model AutoFix {
   documentType  String        // e.g. 'seoSettings' | 'pageContent'
   documentId    String?       // Sanity document _id (resolved at generate time)
   fieldPath     String        // e.g. 'metaDescription' | 'heroSection.image.alt'
+  pageUrl       String?       @db.Text  // URL of the specific page for per-page fixes
 
   // Values
   currentValue  String?       @db.Text

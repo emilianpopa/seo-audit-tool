@@ -12,13 +12,13 @@ const prisma = new PrismaClient();
 const ISSUE_FIELD_MAP = {
   // ── Meta description ──────────────────────────────────────────────────────
   missing_meta_description:  { documentType: 'seoSettings', fieldPath: 'metaDescription' },
-  missing_meta_descriptions: { documentType: 'seoSettings', fieldPath: 'metaDescription' },
+  missing_meta_descriptions: { documentType: 'pageSeo',     fieldPath: 'metaDescription', perPage: true },
   description_too_short:     { documentType: 'seoSettings', fieldPath: 'metaDescription' },
   description_too_long:      { documentType: 'seoSettings', fieldPath: 'metaDescription' },
 
   // ── Page title ────────────────────────────────────────────────────────────
   missing_title:             { documentType: 'seoSettings', fieldPath: 'metaTitle' },
-  missing_title_tags:        { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  missing_title_tags:        { documentType: 'pageSeo',     fieldPath: 'metaTitle',       perPage: true },
   title_missing:             { documentType: 'seoSettings', fieldPath: 'metaTitle' },
   title_too_short:           { documentType: 'seoSettings', fieldPath: 'metaTitle' },
   title_too_long:            { documentType: 'seoSettings', fieldPath: 'metaTitle' },
@@ -52,7 +52,7 @@ const ISSUE_FIELD_MAP = {
   images_missing_alt:        { documentType: 'pageContent', fieldPath: 'heroSection.image.alt' },
 
   // ── Hero / page H1 ────────────────────────────────────────────────────────
-  missing_h1:                { documentType: 'pageContent', fieldPath: 'heroSection.title' },
+  missing_h1:                { documentType: 'pageSeo',     fieldPath: 'metaTitle',       perPage: true },
   multiple_h1:               { documentType: 'pageContent', fieldPath: 'heroSection.title' },
 
   // ── Structured data / NAP ─────────────────────────────────────────────────
@@ -107,60 +107,128 @@ export class AutoFixEngine {
         const mapping = ISSUE_FIELD_MAP[issue.type];
         if (!mapping) continue;
 
-        // Skip if a fix already exists for this audit + issue type + field
-        const existing = await prisma.autoFix.findFirst({
-          where: { auditId, issueType: issue.type, fieldPath: mapping.fieldPath },
-        });
-        if (existing) continue;
+        if (mapping.perPage) {
+          // ── Per-page fix: create one AutoFix record per affected URL ──────
+          // Extract evidence URLs from issue.evidence or issue.examples
+          const evidenceUrls = [];
+          if (Array.isArray(issue.evidence) && issue.evidence.length) {
+            for (const e of issue.evidence.slice(0, 10)) {
+              if (e.url) evidenceUrls.push(e.url);
+            }
+          } else if (Array.isArray(issue.examples) && issue.examples.length) {
+            for (const u of issue.examples.slice(0, 10)) {
+              if (typeof u === 'string') evidenceUrls.push(u);
+            }
+          }
 
-        const sanityDoc = sanityDocs[mapping.documentType];
-        const currentValue = SanityCMSAdapter.getFieldValue(sanityDoc, mapping.fieldPath);
-        const proposedValue = this._generateProposedValue({
-          issue,
-          mapping,
-          audit,
-          homepage,
-          currentValue,
-        });
-        if (!proposedValue) continue;
-        // Skip no-op: proposed value is identical to what's already in Sanity
-        if (String(proposedValue).trim() === String(currentValue ?? '').trim()) continue;
+          for (const evidenceUrl of evidenceUrls) {
+            let slug;
+            try { slug = new URL(evidenceUrl).pathname; } catch { continue; }
 
-        fixes.push({
-          auditId,
-          issueType: issue.type,
-          severity: issue.severity || 'medium',
-          title: `Fix: ${issue.title || issue.type.replace(/_/g, ' ')}`,
-          description: issue.description || null,
-          documentType: mapping.documentType,
-          documentId: sanityDoc?._id || null,
-          fieldPath: mapping.fieldPath,
-          currentValue: currentValue != null ? String(currentValue) : null,
-          proposedValue: String(proposedValue),
-        });
+            // Skip if a fix already exists for this audit + issue type + field + page
+            const existingPage = await prisma.autoFix.findFirst({
+              where: { auditId, issueType: issue.type, fieldPath: mapping.fieldPath, pageUrl: evidenceUrl },
+            });
+            if (existingPage) continue;
 
-        // If this is an OG issue, also generate an ogDescription fix
-        if (issue.type === 'missing_og_tags' && !fixes.find(f => f.fieldPath === 'ogDescription')) {
-          const descValue = this._generateProposedValue({
-            issue: { ...issue, type: 'missing_og_description' },
-            mapping: { documentType: 'seoSettings', fieldPath: 'ogDescription' },
-            audit,
-            homepage,
-            currentValue: SanityCMSAdapter.getFieldValue(sanityDoc, 'ogDescription'),
-          });
-          if (descValue) {
+            // Get or create the pageSeo Sanity doc for this slug
+            let sanityDocId;
+            try {
+              sanityDocId = await this.adapter.getOrCreatePageSeoDoc(slug);
+            } catch (e) {
+              logger.warn({ err: e, slug }, 'Failed to get/create pageSeo doc — skipping');
+              continue;
+            }
+
+            // Fetch current value from the pageSeo doc
+            let currentPageValue = null;
+            try {
+              const pageDoc = await this.adapter.getDocument(sanityDocId);
+              currentPageValue = SanityCMSAdapter.getFieldValue(pageDoc, mapping.fieldPath);
+            } catch { /* ignore — doc may not yet have the field */ }
+
+            const proposedValue = this._generateProposedValue({
+              issue,
+              mapping,
+              audit,
+              homepage,
+              currentValue: currentPageValue,
+              pageUrl: evidenceUrl,
+            });
+            if (!proposedValue) continue;
+            if (String(proposedValue).trim() === String(currentPageValue ?? '').trim()) continue;
+
             fixes.push({
               auditId,
-              issueType: 'missing_og_description',
+              issueType: issue.type,
               severity: issue.severity || 'medium',
-              title: 'Fix: Missing OG Description',
-              description: 'Add an Open Graph description for better social media sharing.',
-              documentType: 'seoSettings',
-              documentId: sanityDoc?._id || null,
-              fieldPath: 'ogDescription',
-              currentValue: null,
-              proposedValue: String(descValue),
+              title: `Fix: ${issue.title || issue.type.replace(/_/g, ' ')} — ${slug}`,
+              description: issue.description || null,
+              documentType: mapping.documentType,
+              documentId: sanityDocId,
+              fieldPath: mapping.fieldPath,
+              pageUrl: evidenceUrl,
+              currentValue: currentPageValue != null ? String(currentPageValue) : null,
+              proposedValue: String(proposedValue),
             });
+          }
+        } else {
+          // ── Global fix: one record per issue type + field ─────────────────
+          // Skip if a fix already exists for this audit + issue type + field
+          const existing = await prisma.autoFix.findFirst({
+            where: { auditId, issueType: issue.type, fieldPath: mapping.fieldPath },
+          });
+          if (existing) continue;
+
+          const sanityDoc = sanityDocs[mapping.documentType];
+          const currentValue = SanityCMSAdapter.getFieldValue(sanityDoc, mapping.fieldPath);
+          const proposedValue = this._generateProposedValue({
+            issue,
+            mapping,
+            audit,
+            homepage,
+            currentValue,
+          });
+          if (!proposedValue) continue;
+          // Skip no-op: proposed value is identical to what's already in Sanity
+          if (String(proposedValue).trim() === String(currentValue ?? '').trim()) continue;
+
+          fixes.push({
+            auditId,
+            issueType: issue.type,
+            severity: issue.severity || 'medium',
+            title: `Fix: ${issue.title || issue.type.replace(/_/g, ' ')}`,
+            description: issue.description || null,
+            documentType: mapping.documentType,
+            documentId: sanityDoc?._id || null,
+            fieldPath: mapping.fieldPath,
+            currentValue: currentValue != null ? String(currentValue) : null,
+            proposedValue: String(proposedValue),
+          });
+
+          // If this is an OG issue, also generate an ogDescription fix
+          if (issue.type === 'missing_og_tags' && !fixes.find(f => f.fieldPath === 'ogDescription')) {
+            const descValue = this._generateProposedValue({
+              issue: { ...issue, type: 'missing_og_description' },
+              mapping: { documentType: 'seoSettings', fieldPath: 'ogDescription' },
+              audit,
+              homepage,
+              currentValue: SanityCMSAdapter.getFieldValue(sanityDoc, 'ogDescription'),
+            });
+            if (descValue) {
+              fixes.push({
+                auditId,
+                issueType: 'missing_og_description',
+                severity: issue.severity || 'medium',
+                title: 'Fix: Missing OG Description',
+                description: 'Add an Open Graph description for better social media sharing.',
+                documentType: 'seoSettings',
+                documentId: sanityDoc?._id || null,
+                fieldPath: 'ogDescription',
+                currentValue: null,
+                proposedValue: String(descValue),
+              });
+            }
           }
         }
       }
@@ -268,12 +336,27 @@ export class AutoFixEngine {
   /**
    * Generate a sensible proposed value for each fixable field.
    * Uses real page data from the audit wherever possible.
+   * @param {object} opts
+   * @param {string} [opts.pageUrl]  - full URL of the specific page (for perPage fixes)
    */
-  _generateProposedValue({ issue, mapping, audit, homepage, currentValue }) {
+  _generateProposedValue({ issue, mapping, audit, homepage, currentValue, pageUrl }) {
     const domain = audit.domain;
 
     switch (mapping.fieldPath) {
       case 'metaDescription': {
+        // Per-page: generate a page-specific description
+        if (pageUrl) {
+          let slug;
+          try { slug = new URL(pageUrl).pathname; } catch { slug = null; }
+          const pageLabel = slug
+            ? slug.replace(/^\//, '').replace(/[-_]/g, ' ')
+            : null;
+          const brand = homepage?.title?.split(/[-|—]/)[0]?.trim() || domain;
+          if (pageLabel) {
+            const clean = pageLabel.charAt(0).toUpperCase() + pageLabel.slice(1);
+            return `${clean} for ${brand}. Learn more about our policies and terms on this page.`;
+          }
+        }
         // Prefer the actual page meta description if it's a good length
         if (homepage?.metaDescription) {
           const len = homepage.metaDescription.length;
@@ -290,6 +373,19 @@ export class AutoFixEngine {
       }
 
       case 'metaTitle': {
+        // Per-page: derive a page-specific title from the slug
+        if (pageUrl) {
+          let slug;
+          try { slug = new URL(pageUrl).pathname; } catch { slug = null; }
+          const pageLabel = slug
+            ? slug.replace(/^\//, '').replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
+            : null;
+          const brand = homepage?.title?.split(/[-|—]/)[0]?.trim() || domain;
+          if (pageLabel) {
+            const clean = pageLabel.charAt(0).toUpperCase() + pageLabel.slice(1);
+            return `${clean} — ${brand}`;
+          }
+        }
         if (homepage?.title) {
           const len = homepage.title.length;
           if (len >= 30 && len <= 60) return homepage.title;

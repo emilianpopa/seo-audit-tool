@@ -65,6 +65,27 @@ export class SanityCMSAdapter {
   }
 
   /**
+   * Find or create a pageSeo document for a given page path slug.
+   * Returns the document _id (without drafts. prefix).
+   */
+  async getOrCreatePageSeoDoc(slug) {
+    // Normalise slug: ensure it starts with /
+    const normSlug = slug.startsWith('/') ? slug : '/' + slug;
+    const existing = await this.client.fetch(
+      '*[_type == "pageSeo" && slug == $slug][0]',
+      { slug: normSlug }
+    );
+    if (existing) return existing._id.replace(/^drafts\./, '');
+
+    // Create a new minimal pageSeo doc
+    const created = await this.client.create({
+      _type: 'pageSeo',
+      slug: normSlug,
+    });
+    return created._id;
+  }
+
+  /**
    * Get the current value of a nested field from a document.
    * e.g. getFieldValue(doc, 'heroSection.image.alt')
    */

@@ -132,6 +132,7 @@ router.get('/:auditId/review', async (req, res, next) => {
             </div>
             <div class="proposal-body" style="display:none">
               <div class="proposal-field">Field: <code>${escHtml(fix.fieldPath)}</code> <span class="fix-status ${statusClass}">${statusLabel}</span></div>
+              ${fix.pageUrl ? `<div class="proposal-page">Page: <a href="${escHtml(fix.pageUrl)}" target="_blank">${escHtml(fix.pageUrl)}</a></div>` : ''}
               <div class="proposal-values">
                 <div class="val-block">
                   <div class="val-label">Current value</div>
@@ -140,7 +141,9 @@ router.get('/:auditId/review', async (req, res, next) => {
                 <div class="val-arrow">→</div>
                 <div class="val-block">
                   <div class="val-label">Proposed value</div>
-                  <div class="val-text proposed">${escHtml(fix.proposedValue)}</div>
+                  ${canAct
+                    ? `<textarea class="val-text proposed editable" id="proposed-${fix.id}" rows="3">${escHtml(fix.proposedValue)}</textarea>`
+                    : `<div class="val-text proposed">${escHtml(fix.proposedValue)}</div>`}
                 </div>
               </div>
               <div class="proposal-actions">${publishBtn}${draftBtn}${rejectBtn}</div>
@@ -244,8 +247,11 @@ router.get('/:auditId/review', async (req, res, next) => {
   .val-text { font-size: 13px; padding: 8px; border-radius: 6px; word-break: break-word; }
   .val-text.current { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
   .val-text.proposed { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+  .val-text.editable { resize: vertical; font-family: inherit; border: 1px solid #86efac; background: #f0fdf4; color: #166534; padding: 8px; border-radius: 6px; width: 100%; min-height: 60px; }
   .val-arrow { font-size: 18px; color: #94a3b8; padding-top: 22px; }
   .proposal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .proposal-page { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+  .proposal-page a { color: #3b82f6; }
 
   /* Buttons */
   .btn-publish { background: #7c3aed; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s; }
@@ -319,13 +325,19 @@ function toggleProposal(el) {
 
 async function applyFix(btn) {
   const fixId = btn.dataset.fixId;
+  const textarea = document.getElementById('proposed-' + fixId);
+  const proposedValue = textarea ? textarea.value : null;
   const feedback = document.getElementById('feedback-' + fixId);
   btn.disabled = true;
   btn.textContent = 'Applying…';
   feedback.className = 'fix-feedback';
   feedback.textContent = '';
   try {
-    const res = await fetch('/api/autofix/fixes/' + fixId + '/fix', { method: 'POST' });
+    const res = await fetch('/api/autofix/fixes/' + fixId + '/fix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposedValue }),
+    });
     const data = await res.json();
     if (data.success) {
       btn.textContent = '✓ Draft created';
@@ -351,13 +363,19 @@ async function applyFix(btn) {
 
 async function publishFix(btn) {
   const fixId = btn.dataset.fixId;
+  const textarea = document.getElementById('proposed-' + fixId);
+  const proposedValue = textarea ? textarea.value : null;
   const feedback = document.getElementById('feedback-' + fixId);
   btn.disabled = true;
   btn.textContent = 'Publishing…';
   feedback.className = 'fix-feedback';
   feedback.textContent = '';
   try {
-    const res = await fetch('/api/autofix/fixes/' + fixId + '/publish', { method: 'POST' });
+    const res = await fetch('/api/autofix/fixes/' + fixId + '/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposedValue }),
+    });
     const data = await res.json();
     if (data.success) {
       btn.textContent = '✓ Live ⚡';
@@ -517,6 +535,12 @@ router.post('/fixes/:fixId/fix', async (req, res, next) => {
       await prisma.autoFix.update({ where: { id: fixId }, data: { status: 'APPROVED' } });
     }
 
+    // If the caller sent an edited proposed value, persist it before applying
+    const { proposedValue: overrideValue } = req.body || {};
+    if (overrideValue !== undefined && overrideValue !== fix.proposedValue) {
+      await prisma.autoFix.update({ where: { id: fixId }, data: { proposedValue: overrideValue } });
+    }
+
     const engine = getEngine();
     const result = await engine.applyFix(fixId);
     res.json(successResponse(result, result.message));
@@ -541,6 +565,12 @@ router.post('/fixes/:fixId/publish', async (req, res, next) => {
     }
     if (fix.status === 'REJECTED') {
       return res.status(400).json(errorResponse('Fix has been dismissed', 'INVALID_STATUS'));
+    }
+
+    // If the caller sent an edited proposed value, persist it before publishing
+    const { proposedValue: overrideValue } = req.body || {};
+    if (overrideValue !== undefined && overrideValue !== fix.proposedValue) {
+      await prisma.autoFix.update({ where: { id: fixId }, data: { proposedValue: overrideValue } });
     }
 
     const engine = getEngine();
