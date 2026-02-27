@@ -43,9 +43,12 @@ router.get('/:auditId/review', async (req, res, next) => {
     }
 
     const fixes = await prisma.autoFix.findMany({ where: { auditId } });
-    // Build a lookup: issueType → fix record
+    // Build a lookup: issueType → [fix, ...] (multiple for per-page issues)
     const fixByIssueType = {};
-    for (const f of fixes) fixByIssueType[f.issueType] = f;
+    for (const f of fixes) {
+      if (!fixByIssueType[f.issueType]) fixByIssueType[f.issueType] = [];
+      fixByIssueType[f.issueType].push(f);
+    }
 
     const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
     const SEV_COLOR = {
@@ -79,7 +82,7 @@ router.get('/:auditId/review', async (req, res, next) => {
 
       let issueCards = '';
       for (const issue of sorted) {
-        const fix = fixByIssueType[issue.type];
+        const issueFixes = fixByIssueType[issue.type] || [];
         const sevColor = SEV_COLOR[issue.severity] || '#6b7280';
 
         // Evidence list
@@ -90,15 +93,17 @@ router.get('/:auditId/review', async (req, res, next) => {
           ).join('');
           evidenceHtml = `<ul class="evidence">${items}</ul>`;
         } else if (Array.isArray(issue.examples) && issue.examples.length) {
-          const items = issue.examples.slice(0, 5).map(u =>
-            `<li><span class="ev-url">${escHtml(u)}</span></li>`
-          ).join('');
+          const items = issue.examples.slice(0, 5).map(u => {
+            if (u && typeof u === 'object') {
+              return `<li><span class="ev-url">${escHtml(u.url || '')}</span>${u.detail ? ` — ${escHtml(u.detail)}` : ''}</li>`;
+            }
+            return `<li><span class="ev-url">${escHtml(String(u))}</span></li>`;
+          }).join('');
           evidenceHtml = `<ul class="evidence">${items}</ul>`;
         }
 
-        // Proposal block
-        let proposalHtml = '';
-        if (fix) {
+        // Proposal block — one per fix record (multiple for per-page issues)
+        const renderFixProposal = (fix) => {
           const statusClass = fix.status === 'PUBLISHED' ? 'status-published'
                             : fix.status === 'APPLIED'   ? 'status-applied'
                             : fix.status === 'REJECTED'  ? 'status-rejected'
@@ -125,14 +130,19 @@ router.get('/:auditId/review', async (req, res, next) => {
                             : fix.status === 'APPLIED'   ? '&#x2713; Draft created in Studio'
                             : '&#x1F4A1; Proposal available';
 
-          proposalHtml = `
+          const pageContext = fix.pageUrl
+            ? `<div class="proposal-page">Page: <a href="${escHtml(fix.pageUrl)}" target="_blank">${escHtml(fix.pageUrl)}</a></div>`
+            : '';
+
+          const pagePathLabel = (() => { try { return fix.pageUrl ? new URL(fix.pageUrl).pathname : ''; } catch { return fix.pageUrl || ''; } })();
+          return `
             <div class="proposal-toggle" onclick="toggleProposal(this)">
-              <span class="proposal-label">${toggleLabel}</span>
+              <span class="proposal-label">${toggleLabel}${pagePathLabel ? ` <span style="font-size:11px;opacity:.7;">— ${escHtml(pagePathLabel)}</span>` : ''}</span>
               <span class="proposal-arrow">&#x25BE;</span>
             </div>
             <div class="proposal-body" style="display:none">
               <div class="proposal-field">Field: <code>${escHtml(fix.fieldPath)}</code> <span class="fix-status ${statusClass}">${statusLabel}</span></div>
-              ${fix.pageUrl ? `<div class="proposal-page">Page: <a href="${escHtml(fix.pageUrl)}" target="_blank">${escHtml(fix.pageUrl)}</a></div>` : ''}
+              ${pageContext}
               <div class="proposal-values">
                 <div class="val-block">
                   <div class="val-label">Current value</div>
@@ -149,6 +159,12 @@ router.get('/:auditId/review', async (req, res, next) => {
               <div class="proposal-actions">${publishBtn}${draftBtn}${rejectBtn}</div>
               <div class="fix-feedback" id="feedback-${fix.id}"></div>
             </div>`;
+        };
+
+        let proposalHtml = '';
+        if (issueFixes.length > 0) {
+          try { proposalHtml = issueFixes.map(renderFixProposal).join(''); }
+          catch { proposalHtml = ''; }
         }
 
         issueCards += `

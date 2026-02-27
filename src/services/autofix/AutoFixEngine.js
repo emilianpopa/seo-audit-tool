@@ -56,10 +56,16 @@ const ISSUE_FIELD_MAP = {
   multiple_h1:               { documentType: 'pageContent', fieldPath: 'heroSection.title' },
 
   // ── Structured data / NAP ─────────────────────────────────────────────────
-  limited_structured_data:   { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
-  incomplete_nap:            { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
-  inconsistent_address:      { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
-  missing_local_business_schema: { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+  limited_structured_data:       { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
+  // NAP/address issues can't be auto-generated (we don't know the phone/address), so omitted
+  missing_local_business_schema: { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
+
+  // ── FAQ content ───────────────────────────────────────────────────────────
+  no_faq_sections:           { documentType: 'seoSettings', fieldPath: 'faqNotes' },
+
+  // ── Per-page content briefs ───────────────────────────────────────────────
+  thin_content:              { documentType: 'pageSeo', fieldPath: 'contentBrief', perPage: true },
+  weak_eeat_signals:         { documentType: 'pageSeo', fieldPath: 'eeatBrief',    perPage: true },
 
   // ── Twitter handle ────────────────────────────────────────────────────────
   missing_twitter_handle:    { documentType: 'seoSettings', fieldPath: 'twitterHandle' },
@@ -453,6 +459,61 @@ export class AutoFixEngine {
       case 'twitterHandle': {
         // Cannot guess handle — skip
         return null;
+      }
+
+      case 'localBusinessSchema': {
+        // Generate a minimal Organization / LocalBusiness JSON-LD snippet
+        const stripped = domain.replace(/^www\./i, '');
+        const parts = stripped.split('.');
+        const orgName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+        const name = orgName.charAt(0).toUpperCase() + orgName.slice(1);
+        return JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'Organization',
+          name,
+          url: `https://${domain}`,
+          sameAs: [],
+        }, null, 2);
+      }
+
+      case 'faqNotes': {
+        // Generate FAQ implementation guide with sample questions
+        const brand = homepage?.title?.split(/[-|—]/)[0]?.trim() || domain;
+        return `Add a FAQ section to your homepage and key service pages. Suggested questions:\n\n` +
+          `Q: What does ${brand} do?\nA: [Describe your main service in 1–2 sentences]\n\n` +
+          `Q: How does pricing work?\nA: [Explain pricing tiers or contact-for-quote]\n\n` +
+          `Q: How long does onboarding / setup take?\nA: [Typical timeline]\n\n` +
+          `Q: What makes ${brand} different?\nA: [Key differentiators vs competitors]\n\n` +
+          `Q: How can I get started?\nA: [Step-by-step getting-started guide]\n\n` +
+          `Implementation: mark up each Q&A with FAQPage JSON-LD schema and validate at schema.org/validator.`;
+      }
+
+      case 'contentBrief': {
+        // Per-page content expansion brief
+        let slug;
+        try { slug = pageUrl ? new URL(pageUrl).pathname : null; } catch { slug = null; }
+        const pageLabel = slug
+          ? slug.replace(/^\//, '').replace(/[-_/]/g, ' ').trim() || 'homepage'
+          : 'this page';
+        const clean = pageLabel.charAt(0).toUpperCase() + pageLabel.slice(1);
+        return `Content expansion brief for "${clean}":\n\n` +
+          `1. Expand total word count to 600–900+ words\n` +
+          `2. Add 3–5 new H2 sections covering related subtopics\n` +
+          `3. Include a numbered list or bullet points for scannability\n` +
+          `4. Add 2–3 internal links to related service/blog pages\n` +
+          `5. Include a clear call-to-action (CTA) at the end\n` +
+          `6. Add at least one supporting image with descriptive alt text`;
+      }
+
+      case 'eeatBrief': {
+        // Per-page E-E-A-T improvement tasks
+        return `E-E-A-T credibility improvements needed:\n\n` +
+          `1. Add author byline with full name and relevant credentials/title\n` +
+          `2. Include publication date and "Last updated" date\n` +
+          `3. Link to at least 2 authoritative external sources (gov, academic, industry)\n` +
+          `4. Add supporting images, charts, or data visualisations\n` +
+          `5. If blog/article: add an "About the Author" section with bio and headshot\n` +
+          `6. Ensure the page has a clear editorial owner responsible for accuracy`;
       }
 
       default:
