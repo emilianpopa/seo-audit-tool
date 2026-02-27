@@ -124,6 +124,7 @@ export class AutoFixEngine {
           } else if (Array.isArray(issue.examples) && issue.examples.length) {
             for (const u of issue.examples.slice(0, 10)) {
               if (typeof u === 'string') evidenceUrls.push(u);
+              else if (u && typeof u === 'object' && u.url) evidenceUrls.push(u.url);
             }
           }
 
