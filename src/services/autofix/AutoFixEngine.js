@@ -74,6 +74,26 @@ const ISSUE_FIELD_MAP = {
   robots_blocking:           { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
   robots_blocks_all:         { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
   missing_robots:            { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+
+  // ── Local SEO ─────────────────────────────────────────────────────────────
+  incomplete_nap:            { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
+  inconsistent_address:      { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
+  inconsistent_phone:        { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
+  no_google_maps:            { documentType: 'seoSettings', fieldPath: 'googleMapsUrl' },
+  no_location_in_title:      { documentType: 'seoSettings', fieldPath: 'metaTitle' },
+  missing_location_keywords: { documentType: 'seoSettings', fieldPath: 'locationKeywords' },
+  no_reviews_link:           { documentType: 'seoSettings', fieldPath: 'reviewsUrl' },
+
+  // ── Content Quality ───────────────────────────────────────────────────────
+  low_avg_word_count:        { documentType: 'seoSettings', fieldPath: 'contentStrategy' },
+
+  // ── Authority & Backlinks ─────────────────────────────────────────────────
+  missing_contact_page:      { documentType: 'seoSettings', fieldPath: 'contactPageGuidance' },
+  missing_about_page:        { documentType: 'seoSettings', fieldPath: 'aboutPageGuidance' },
+
+  // ── Technical SEO (mobile / structured data) ──────────────────────────────
+  mobile_not_optimized:      { documentType: 'seoSettings', fieldPath: 'viewportGuidance' },
+  no_structured_data:        { documentType: 'pageSeo',     fieldPath: 'structuredDataGuidance', perPage: true },
 };
 
 export class AutoFixEngine {
@@ -380,6 +400,20 @@ export class AutoFixEngine {
       }
 
       case 'metaTitle': {
+        // Special case: homepage title needs location/service area keyword
+        if (issue.type === 'no_location_in_title') {
+          if (!currentValue) {
+            const nameRaw = domain.split('.')[0];
+            const nameCap = nameRaw.charAt(0).toUpperCase() + nameRaw.slice(1);
+            return `${nameCap} | Online Health Platform`;
+          }
+          // Only modify if title has room and doesn't already mention online/virtual
+          if (currentValue.length <= 45 && !currentValue.includes('Online') && !currentValue.includes('Virtual')) {
+            return `${currentValue} | Online`;
+          }
+          return null; // Too long or already has location keyword
+        }
+
         // Per-page: derive a page-specific title from the slug
         if (pageUrl) {
           let slug;
@@ -468,13 +502,35 @@ export class AutoFixEngine {
         const parts = stripped.split('.');
         const orgName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
         const name = orgName.charAt(0).toUpperCase() + orgName.slice(1);
-        return JSON.stringify({
+
+        // Add phone placeholder for NAP-related issues
+        const needsPhone = issue.type === 'incomplete_nap' || issue.type === 'inconsistent_phone';
+        const needsAddress = issue.type === 'incomplete_nap' || issue.type === 'inconsistent_address';
+
+        const schemaObj = {
           '@context': 'https://schema.org',
           '@type': 'Organization',
           name,
           url: `https://${domain}`,
           sameAs: [],
-        }, null, 2);
+        };
+
+        if (needsPhone) {
+          schemaObj.telephone = '+1-XXX-XXX-XXXX  /* ← UPDATE with real phone number */';
+        }
+
+        if (needsAddress) {
+          schemaObj.address = {
+            '@type': 'PostalAddress',
+            streetAddress: 'UPDATE: use ONE consistent address format',
+            addressLocality: 'City',
+            addressRegion: 'State',
+            postalCode: '00000',
+            addressCountry: 'US',
+          };
+        }
+
+        return JSON.stringify(schemaObj, null, 2);
       }
 
       case 'faqNotes': {
@@ -515,6 +571,56 @@ export class AutoFixEngine {
           `4. Add supporting images, charts, or data visualisations\n` +
           `5. If blog/article: add an "About the Author" section with bio and headshot\n` +
           `6. Ensure the page has a clear editorial owner responsible for accuracy`;
+      }
+
+      case 'googleMapsUrl': {
+        // Don't overwrite existing value
+        if (currentValue) return null;
+        return `https://maps.google.com/maps?q=${encodeURIComponent(domain)}`;
+      }
+
+      case 'locationKeywords': {
+        if (currentValue) return null;
+        const domainPrefix = domain.split('.')[0];
+        return `Service area keywords to add across pages:\n- Consider adding your primary city/region to page titles and H1s\n- For telehealth/online services: "online", "virtual", "remote", "nationwide"\n- Add to homepage H1, About page, and Contact page\n- Example: "${domainPrefix} | Online Health Platform"\n- Check Google Search Console for location-based queries driving traffic`;
+      }
+
+      case 'reviewsUrl': {
+        if (currentValue) return null;
+        const reviewSlug = domain.replace(/\.(io|com|co).*$/, '');
+        return `https://g.page/${reviewSlug}/review`;
+      }
+
+      case 'contactPageGuidance': {
+        if (currentValue) return null;
+        return `Contact page is missing. Create a /contact page with:\n1. Business email address\n2. Contact form (name, email, message fields)\n3. Response time expectation (e.g., "We reply within 24 hours")\n4. Physical address if applicable\n5. Social media links\n6. For SaaS: link to demo booking calendar (Calendly, Cal.com)`;
+      }
+
+      case 'aboutPageGuidance': {
+        if (currentValue) return null;
+        return `About page is missing. Create a /about page with:\n1. Company mission and story\n2. Team members with photos and bios (builds E-E-A-T)\n3. Founding year and milestones\n4. Press mentions or certifications\n5. Company values\n6. For healthcare: credentials, certifications, regulatory compliance`;
+      }
+
+      case 'contentStrategy': {
+        if (currentValue) return null;
+        return `Content expansion strategy (average word count is low):\n1. Homepage: aim for 800-1200 words — expand the hero section, add feature descriptions, testimonials\n2. Service pages: aim for 600-1000 words — explain the problem you solve, methodology, outcomes\n3. Add a blog section with 3-5 posts (500+ words each) targeting FAQ keywords\n4. Avoid keyword stuffing — write for humans first\n5. Include data, statistics, and case studies where possible`;
+      }
+
+      case 'viewportGuidance': {
+        if (currentValue) return null;
+        return `Viewport meta tag is missing from some pages. Add to every HTML page <head>:\n<meta name="viewport" content="width=device-width, initial-scale=1">\nThis is critical for mobile SEO. Check your CMS template/layout file that renders the <head> section.`;
+      }
+
+      case 'structuredDataGuidance': {
+        // Per-page structured data guidance
+        let pageName = 'this page';
+        if (pageUrl) {
+          try {
+            const parsed = new URL(pageUrl);
+            pageName = parsed.pathname.replace(/^\//, '').replace(/-/g, ' ') || 'this page';
+          } catch { /* ignore */ }
+        }
+        return `Add structured data to ${pageName}:\n- Service pages: use Service schema\n- Blog posts: use Article schema with author and datePublished\n- Product pages: use Product schema with price and availability\n- Minimum: add BreadcrumbList schema to all pages\nSee: https://schema.org for type definitions`;
       }
 
       default:
