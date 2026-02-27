@@ -116,6 +116,7 @@ router.get('/:auditId/review', async (req, res, next) => {
                             : 'Pending review';
 
           const canAct = fix.status === 'PENDING' || fix.status === 'FAILED' || fix.status === 'APPROVED';
+          const canEdit = canAct || fix.status === 'REJECTED';
           const draftBtn = canAct
             ? `<button class="btn-fix" data-fix-id="${fix.id}" onclick="applyFix(this)" title="Creates a draft in Sanity Studio for review before publishing">Fix it (draft) →</button>`
             : '';
@@ -124,6 +125,9 @@ router.get('/:auditId/review', async (req, res, next) => {
             : '';
           const rejectBtn = canAct
             ? `<button class="btn-reject" data-fix-id="${fix.id}" onclick="rejectFix(this)">Dismiss</button>`
+            : '';
+          const restoreBtn = fix.status === 'REJECTED'
+            ? `<button class="btn-restore" data-fix-id="${fix.id}" onclick="restoreFix(this)">↩ Restore</button>`
             : '';
 
           const toggleLabel = fix.status === 'PUBLISHED' ? '&#x26A1; Auto-applied &#x2014; live on website'
@@ -151,12 +155,12 @@ router.get('/:auditId/review', async (req, res, next) => {
                 <div class="val-arrow">→</div>
                 <div class="val-block">
                   <div class="val-label">Proposed value</div>
-                  ${canAct
+                  ${canEdit
                     ? `<textarea class="val-text proposed editable" id="proposed-${fix.id}" rows="3">${escHtml(fix.proposedValue)}</textarea>`
                     : `<div class="val-text proposed">${escHtml(fix.proposedValue)}</div>`}
                 </div>
               </div>
-              <div class="proposal-actions">${publishBtn}${draftBtn}${rejectBtn}</div>
+              <div class="proposal-actions">${publishBtn}${draftBtn}${rejectBtn}${restoreBtn}</div>
               <div class="fix-feedback" id="feedback-${fix.id}"></div>
             </div>`;
         };
@@ -278,6 +282,8 @@ router.get('/:auditId/review', async (req, res, next) => {
   .btn-fix:disabled { background: #86efac; cursor: default; }
   .btn-reject { background: #fff; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; transition: all .15s; }
   .btn-reject:hover { background: #f1f5f9; color: #dc2626; border-color: #fca5a5; }
+  .btn-restore { background: #fff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; transition: all .15s; }
+  .btn-restore:hover { background: #eff6ff; border-color: #93c5fd; }
 
   /* Status badges */
   .fix-status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
@@ -451,6 +457,35 @@ async function rejectFix(btn) {
     }
   } catch (e) {
     btn.disabled = false;
+  }
+}
+
+async function restoreFix(btn) {
+  const fixId = btn.dataset.fixId;
+  const textarea = document.getElementById('proposed-' + fixId);
+  const proposedValue = textarea ? textarea.value : null;
+  const feedback = document.getElementById('feedback-' + fixId);
+  btn.disabled = true;
+  btn.textContent = 'Restoring…';
+  try {
+    const res = await fetch('/api/autofix/fixes/' + fixId + '/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposedValue }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      // Reload so the new PENDING state shows correct buttons
+      location.reload();
+    } else {
+      btn.disabled = false;
+      btn.textContent = '↩ Restore';
+      if (feedback) { feedback.className = 'fix-feedback error'; feedback.textContent = data.error?.message || 'Failed. Try again.'; }
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '↩ Restore';
+    if (feedback) { feedback.className = 'fix-feedback error'; feedback.textContent = 'Network error.'; }
   }
 }
 
@@ -630,6 +665,29 @@ router.post('/fixes/:fixId/reject', async (req, res, next) => {
       data: { status: 'REJECTED' },
     });
     res.json(successResponse(updated, 'Fix rejected'));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================================
+// POST /api/autofix/fixes/:fixId/restore
+// Restore a REJECTED fix back to PENDING (optionally with an updated proposed value).
+// ============================================================================
+router.post('/fixes/:fixId/restore', async (req, res, next) => {
+  try {
+    const { fixId } = req.params;
+    const fix = await prisma.autoFix.findUnique({ where: { id: fixId } });
+    if (!fix) return res.status(404).json(errorResponse('Fix not found', 'NOT_FOUND'));
+
+    const data = { status: 'PENDING' };
+    const { proposedValue } = req.body || {};
+    if (proposedValue !== undefined && proposedValue !== fix.proposedValue) {
+      data.proposedValue = proposedValue;
+    }
+
+    const updated = await prisma.autoFix.update({ where: { id: fixId }, data });
+    res.json(successResponse(updated, 'Fix restored to pending'));
   } catch (err) {
     next(err);
   }
