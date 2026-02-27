@@ -34,9 +34,10 @@ const ISSUE_FIELD_MAP = {
 
   // ── Canonical URL ─────────────────────────────────────────────────────────
   missing_canonical:         { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
-  missing_canonical_tags:    { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
   canonical_mismatch:        { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
-  wrong_canonical_tags:      { documentType: 'seoSettings', fieldPath: 'canonicalUrl' },
+  // Per-page canonical tags — each affected page gets its own pageSeo.canonical fix
+  missing_canonical_tags:    { documentType: 'pageSeo', fieldPath: 'canonical', perPage: true },
+  wrong_canonical_tags:      { documentType: 'pageSeo', fieldPath: 'canonical', perPage: true },
 
   // ── Robots indexing ───────────────────────────────────────────────────────
   noindex_set:               { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
@@ -56,8 +57,8 @@ const ISSUE_FIELD_MAP = {
   multiple_h1:               { documentType: 'pageContent', fieldPath: 'heroSection.title' },
 
   // ── Structured data / NAP ─────────────────────────────────────────────────
-  limited_structured_data:       { documentType: 'seoSettings', fieldPath: 'structuredData.organizationName' },
-  // NAP/address issues can't be auto-generated (we don't know the phone/address), so omitted
+  // limited_structured_data = pages lack schema markup; generate a complete Organization JSON-LD
+  limited_structured_data:       { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
   missing_local_business_schema: { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
 
   // ── FAQ content ───────────────────────────────────────────────────────────
@@ -70,10 +71,12 @@ const ISSUE_FIELD_MAP = {
   // ── Twitter handle ────────────────────────────────────────────────────────
   missing_twitter_handle:    { documentType: 'seoSettings', fieldPath: 'twitterHandle' },
 
-  // ── Robots / sitemap (allow indexing) ─────────────────────────────────────
+  // ── Robots / sitemap ──────────────────────────────────────────────────────
   robots_blocking:           { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
-  robots_blocks_all:         { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
   missing_robots:            { documentType: 'seoSettings', fieldPath: 'robotsSettings.index' },
+  // robots_blocks_all = the robots.txt file itself is blocking crawlers (server-level issue).
+  // robotsSettings.index is already true in Sanity; we store developer guidance instead.
+  robots_blocks_all:         { documentType: 'seoSettings', fieldPath: 'robotsGuidance' },
 
   // ── Local SEO ─────────────────────────────────────────────────────────────
   incomplete_nap:            { documentType: 'seoSettings', fieldPath: 'localBusinessSchema' },
@@ -91,9 +94,23 @@ const ISSUE_FIELD_MAP = {
   missing_contact_page:      { documentType: 'seoSettings', fieldPath: 'contactPageGuidance' },
   missing_about_page:        { documentType: 'seoSettings', fieldPath: 'aboutPageGuidance' },
 
-  // ── Technical SEO (mobile / structured data) ──────────────────────────────
-  mobile_not_optimized:      { documentType: 'seoSettings', fieldPath: 'viewportGuidance' },
+  // ── Technical SEO (mobile viewport meta tag) ──────────────────────────────
+  // additionalMetaTags is the real field the frontend reads — append the viewport tag to it
+  mobile_not_optimized:      { documentType: 'seoSettings', fieldPath: 'additionalMetaTags', arrayAppend: true },
   no_structured_data:        { documentType: 'pageSeo',     fieldPath: 'structuredDataGuidance', perPage: true },
+};
+
+// Common slug → human label mapping for compound slugs without separators
+const SLUG_LABEL_MAP = {
+  privacypolicy:       'Privacy Policy',
+  enduseragreement:    'End User Agreement',
+  termsofservice:      'Terms of Service',
+  termsandconditions:  'Terms and Conditions',
+  cookiepolicy:        'Cookie Policy',
+  refundpolicy:        'Refund Policy',
+  accessibilitypolicy: 'Accessibility Policy',
+  aboutus:             'About Us',
+  contactus:           'Contact Us',
 };
 
 export class AutoFixEngine {
@@ -200,15 +217,28 @@ export class AutoFixEngine {
             });
           }
         } else {
-          // ── Global fix: one record per issue type + field ─────────────────
-          // Skip if a fix already exists for this audit + issue type + field
+          // ── Global fix: one record per field (not per issue type) ─────────
+          // Use field-level dedup: if ANY fix for this audit+field already exists, skip.
+          // This prevents duplicate proposals when two issue types map to the same field.
           const existing = await prisma.autoFix.findFirst({
-            where: { auditId, issueType: issue.type, fieldPath: mapping.fieldPath },
+            where: { auditId, fieldPath: mapping.fieldPath },
           });
           if (existing) continue;
 
           const sanityDoc = sanityDocs[mapping.documentType];
-          const currentValue = SanityCMSAdapter.getFieldValue(sanityDoc, mapping.fieldPath);
+          let currentValue = SanityCMSAdapter.getFieldValue(sanityDoc, mapping.fieldPath);
+
+          // For array-append fields: stringify the array for storage, check if item already present
+          if (mapping.arrayAppend) {
+            const arr = Array.isArray(currentValue) ? currentValue : [];
+            // Check if viewport tag already exists in additionalMetaTags
+            if (mapping.fieldPath === 'additionalMetaTags') {
+              const hasViewport = arr.some(item => item && item.name === 'viewport');
+              if (hasViewport) continue;
+            }
+            currentValue = arr.length ? JSON.stringify(arr) : null;
+          }
+
           const proposedValue = this._generateProposedValue({
             issue,
             mapping,
@@ -218,7 +248,7 @@ export class AutoFixEngine {
           });
           if (!proposedValue) continue;
           // Skip no-op: proposed value is identical to what's already in Sanity
-          if (String(proposedValue).trim() === String(currentValue ?? '').trim()) continue;
+          if (!mapping.arrayAppend && String(proposedValue).trim() === String(currentValue ?? '').trim()) continue;
 
           fixes.push({
             auditId,
@@ -284,8 +314,16 @@ export class AutoFixEngine {
     }
 
     try {
-      const setFields = SanityCMSAdapter.buildSetObject(fix.fieldPath, fix.proposedValue);
-      await this.adapter.patchDocument(fix.documentId, setFields);
+      const arrayAppendFields = ['additionalMetaTags'];
+      if (arrayAppendFields.includes(fix.fieldPath)) {
+        let items;
+        try { items = JSON.parse(fix.proposedValue); } catch { items = [fix.proposedValue]; }
+        if (!Array.isArray(items)) items = [items];
+        await this.adapter.appendToArray(fix.documentId, fix.fieldPath, items);
+      } else {
+        const setFields = SanityCMSAdapter.buildSetObject(fix.fieldPath, fix.proposedValue);
+        await this.adapter.patchDocument(fix.documentId, setFields);
+      }
 
       await prisma.autoFix.update({
         where: { id: fixId },
@@ -321,8 +359,16 @@ export class AutoFixEngine {
     if (!fix.documentId) throw new Error(`Fix ${fixId} has no Sanity documentId`);
 
     try {
-      const setFields = SanityCMSAdapter.buildSetObject(fix.fieldPath, fix.proposedValue);
-      await this.adapter.publishDocument(fix.documentId, setFields);
+      const arrayAppendFields = ['additionalMetaTags'];
+      if (arrayAppendFields.includes(fix.fieldPath)) {
+        let items;
+        try { items = JSON.parse(fix.proposedValue); } catch { items = [fix.proposedValue]; }
+        if (!Array.isArray(items)) items = [items];
+        await this.adapter.publishAppendToArray(fix.documentId, fix.fieldPath, items);
+      } else {
+        const setFields = SanityCMSAdapter.buildSetObject(fix.fieldPath, fix.proposedValue);
+        await this.adapter.publishDocument(fix.documentId, setFields);
+      }
 
       await prisma.autoFix.update({
         where: { id: fixId },
@@ -418,9 +464,11 @@ export class AutoFixEngine {
         if (pageUrl) {
           let slug;
           try { slug = new URL(pageUrl).pathname; } catch { slug = null; }
-          const pageLabel = slug
-            ? slug.replace(/^\//, '').replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
-            : null;
+          const rawSlug = slug ? slug.replace(/^\//, '') : null;
+          // Look up known compound slugs first (e.g. 'privacypolicy' → 'Privacy Policy')
+          const knownLabel = rawSlug ? SLUG_LABEL_MAP[rawSlug.toLowerCase()] : null;
+          const pageLabel = knownLabel
+            || (rawSlug ? rawSlug.replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2') : null);
           const brand = homepage?.title?.split(/[-|—]/)[0]?.trim() || domain;
           if (pageLabel) {
             const clean = pageLabel.charAt(0).toUpperCase() + pageLabel.slice(1);
@@ -497,15 +545,16 @@ export class AutoFixEngine {
       }
 
       case 'localBusinessSchema': {
-        // Generate a minimal Organization / LocalBusiness JSON-LD snippet
+        // Generate a complete Organization JSON-LD snippet.
+        // Always generate — even if a value already exists — to provide better coverage.
         const stripped = domain.replace(/^www\./i, '');
         const parts = stripped.split('.');
         const orgName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
         const name = orgName.charAt(0).toUpperCase() + orgName.slice(1);
 
-        // Add phone placeholder for NAP-related issues
         const needsPhone = issue.type === 'incomplete_nap' || issue.type === 'inconsistent_phone';
         const needsAddress = issue.type === 'incomplete_nap' || issue.type === 'inconsistent_address';
+        const needsFull = issue.type === 'limited_structured_data' || issue.type === 'missing_local_business_schema';
 
         const schemaObj = {
           '@context': 'https://schema.org',
@@ -515,18 +564,26 @@ export class AutoFixEngine {
           sameAs: [],
         };
 
-        if (needsPhone) {
-          schemaObj.telephone = '+1-XXX-XXX-XXXX  /* ← UPDATE with real phone number */';
+        if (needsPhone || needsFull) {
+          schemaObj.telephone = '+XX-XXX-XXX-XXXX  ← UPDATE with real phone number';
         }
 
-        if (needsAddress) {
+        if (needsAddress || needsFull) {
           schemaObj.address = {
             '@type': 'PostalAddress',
-            streetAddress: 'UPDATE: use ONE consistent address format',
+            streetAddress: 'UPDATE: street address',
             addressLocality: 'City',
-            addressRegion: 'State',
+            addressRegion: 'Region',
             postalCode: '00000',
-            addressCountry: 'US',
+            addressCountry: 'GB',
+          };
+        }
+
+        if (needsFull) {
+          schemaObj.contactPoint = {
+            '@type': 'ContactPoint',
+            contactType: 'customer support',
+            email: `support@${stripped}`,
           };
         }
 
@@ -604,6 +661,32 @@ export class AutoFixEngine {
       case 'contentStrategy': {
         if (currentValue) return null;
         return `Content expansion strategy (average word count is low):\n1. Homepage: aim for 800-1200 words — expand the hero section, add feature descriptions, testimonials\n2. Service pages: aim for 600-1000 words — explain the problem you solve, methodology, outcomes\n3. Add a blog section with 3-5 posts (500+ words each) targeting FAQ keywords\n4. Avoid keyword stuffing — write for humans first\n5. Include data, statistics, and case studies where possible`;
+      }
+
+      case 'additionalMetaTags': {
+        // Return a JSON array item to be appended to the additionalMetaTags array.
+        // The frontend reads this array and injects each {name, content} as a <meta> tag.
+        return JSON.stringify([{ name: 'viewport', content: 'width=device-width, initial-scale=1' }]);
+      }
+
+      case 'canonical': {
+        // Per-page self-referencing canonical URL
+        if (!pageUrl) return null;
+        try {
+          const parsed = new URL(pageUrl);
+          // Always use www. prefix for consistency
+          const host = parsed.hostname.startsWith('www.') ? parsed.hostname : `www.${parsed.hostname}`;
+          return `https://${host}${parsed.pathname}`;
+        } catch {
+          return null;
+        }
+      }
+
+      case 'robotsGuidance': {
+        // The robots.txt file is blocking all crawlers — this is a server-level fix.
+        // We store guidance notes in Sanity for the developer.
+        if (currentValue) return null;
+        return `⚠️ Your robots.txt is blocking all search engine crawlers.\n\nTo fix:\n1. Update your robots.txt file (usually at https://${domain}/robots.txt)\n2. Replace "Disallow: /" with "Disallow:" (empty value = allow all)\n3. Add a Sitemap line: Sitemap: https://${domain}/sitemap.xml\n\nCorrect robots.txt:\n  User-agent: *\n  Disallow:\n  Sitemap: https://${domain}/sitemap.xml\n\nThis CANNOT be fixed via Sanity — it requires a server/hosting configuration change.`;
       }
 
       case 'viewportGuidance': {

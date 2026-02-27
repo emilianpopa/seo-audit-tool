@@ -65,6 +65,33 @@ export class SanityCMSAdapter {
   }
 
   /**
+   * Append items to an array field in a draft document.
+   * Uses setIfMissing to initialise the array if it doesn't exist yet.
+   */
+  async appendToArray(docId, fieldPath, items) {
+    const draftId = docId.startsWith('drafts.') ? docId : `drafts.${docId}`;
+    const result = await this.client
+      .patch(draftId)
+      .setIfMissing({ [fieldPath]: [] })
+      .insert('after', `${fieldPath}[-1]`, items)
+      .commit({ autoGenerateArrayKeys: true });
+    return result;
+  }
+
+  /**
+   * Append items to an array field on the published document directly (no draft).
+   */
+  async publishAppendToArray(docId, fieldPath, items) {
+    const publishedId = docId.replace(/^drafts\./, '');
+    const result = await this.client
+      .patch(publishedId)
+      .setIfMissing({ [fieldPath]: [] })
+      .insert('after', `${fieldPath}[-1]`, items)
+      .commit({ autoGenerateArrayKeys: true });
+    return result;
+  }
+
+  /**
    * Find or create a pageSeo document for a given page path slug.
    * Returns the document _id (without drafts. prefix).
    */
