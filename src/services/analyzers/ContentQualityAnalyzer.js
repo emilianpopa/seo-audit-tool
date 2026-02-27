@@ -103,7 +103,8 @@ class ContentQualityAnalyzer {
       totalWords += wordCount;
 
       const threshold = getWordCountThreshold(page.url, page.path);
-      if (wordCount < threshold && page.path !== '/') {
+      // Skip pages with < 10 words — these are almost certainly 404/error pages, not real content
+      if (wordCount < threshold && wordCount >= 10 && page.path !== '/') {
         thinContent.push({
           url: page.url,
           path: page.path,
