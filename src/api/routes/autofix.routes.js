@@ -1,18 +1,33 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AutoFixEngine } from '../../services/autofix/AutoFixEngine.js';
+import { getCMSConfigForDomain } from '../../services/autofix/getCMSConfig.js';
 import { successResponse, errorResponse } from '../../utils/responseFormatter.js';
 import logger from '../../config/logger.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-function getEngine() {
-  const projectId = process.env.SANITY_PROJECT_ID || 'rtt3hnlz';
-  const dataset = process.env.SANITY_DATASET || 'production';
-  const token = process.env.SANITY_API_TOKEN;
-  if (!token) throw new Error('SANITY_API_TOKEN environment variable is not set');
-  return new AutoFixEngine({ projectId, dataset, token });
+/**
+ * Build an AutoFixEngine for a given domain by looking up its CMSConfig.
+ * Returns null if no CMS has been configured for the domain.
+ */
+async function getEngine(domain) {
+  const cfg = await getCMSConfigForDomain(domain);
+  if (!cfg) return null;
+  const token = cfg.token || process.env.SANITY_API_TOKEN;
+  if (!token) throw new Error(`No Sanity API token for domain ${domain}. Set one in CMSConfig or via SANITY_API_TOKEN.`);
+  return new AutoFixEngine({ projectId: cfg.projectId, dataset: cfg.dataset, token });
+}
+
+/**
+ * Fetch the audit's domain and return the engine for it.
+ * Returns null if no CMS configured.
+ */
+async function getEngineForAudit(auditId) {
+  const audit = await prisma.seoAudit.findUnique({ where: { id: auditId }, select: { domain: true } });
+  if (!audit) throw new Error('Audit not found');
+  return getEngine(audit.domain);
 }
 
 // ============================================================================
@@ -29,13 +44,14 @@ router.get('/:auditId/review', async (req, res, next) => {
     });
     if (!audit) return res.status(404).send('<h1>Audit not found</h1>');
 
-    // Auto-generate fixes if none exist yet (requires token)
-    if (process.env.SANITY_API_TOKEN) {
+    // Auto-generate fixes if CMS is configured and no fixes exist yet
+    const cmsCfg = await getCMSConfigForDomain(audit.domain);
+    if (cmsCfg) {
       const existing = await prisma.autoFix.count({ where: { auditId } });
       if (existing === 0) {
         try {
-          const engine = getEngine();
-          await engine.generateFixes(auditId);
+          const engine = await getEngine(audit.domain);
+          if (engine) await engine.generateFixes(auditId);
         } catch (e) {
           logger.warn({ err: e }, 'Auto-generate fixes failed on review load');
         }
@@ -209,6 +225,24 @@ router.get('/:auditId/review', async (req, res, next) => {
       .filter(f => f.status === 'PENDING' || f.status === 'FAILED' || f.status === 'APPROVED')
       .map(f => f.id);
 
+    const cmsBannerHtml = cmsCfg
+      ? `<div class="cms-banner connected">
+  <span>&#x2705;</span>
+  <span><strong>CMS connected</strong> &mdash; Sanity project <code>${escHtml(cmsCfg.projectId)}</code> / dataset <code>${escHtml(cmsCfg.dataset)}</code>. Fixes will be applied to this Sanity workspace.</span>
+</div>`
+      : `<div class="cms-banner unconfigured">
+  <span>&#x26A0;&#xFE0F;</span>
+  <div>
+    <strong>No CMS configured for ${escHtml(audit.domain)}</strong> &mdash; connect a Sanity project to enable one-click fixes.
+    <form class="cms-setup-form" onsubmit="saveCMSConfig(event, '${escHtml(audit.domain)}')">
+      <label>Project ID<input name="projectId" placeholder="e.g. rtt3hnlz" required></label>
+      <label>Dataset<input name="dataset" placeholder="production" value="production" required></label>
+      <label>API Token<input name="token" type="password" placeholder="skSanity..." required></label>
+      <button type="submit" class="btn-cms-save">Save &amp; connect</button>
+    </form>
+  </div>
+</div>`;
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -303,6 +337,19 @@ router.get('/:auditId/review', async (req, res, next) => {
   .autoapplied-banner strong { color: #3b0764; }
   .autoapplied-banner a { color: #6d28d9; font-weight: 600; }
 
+  /* CMS status banner */
+  .cms-banner { padding: 12px 20px; font-size: 13px; display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .cms-banner.connected { background: #f0fdf4; border-left: 4px solid #16a34a; color: #166534; }
+  .cms-banner.unconfigured { background: #fffbeb; border-left: 4px solid #d97706; color: #92400e; }
+  .cms-banner strong { font-weight: 700; }
+  .cms-setup-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 8px; width: 100%; }
+  .cms-setup-form label { font-size: 12px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; color: #92400e; }
+  .cms-setup-form input { border: 1px solid #fcd34d; border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 200px; background: #fff; color: #1e293b; }
+  .cms-setup-form input[name="token"] { width: 260px; }
+  .btn-cms-save { background: #d97706; color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .btn-cms-save:hover { background: #b45309; }
+  .btn-cms-save:disabled { background: #fcd34d; cursor: default; }
+
   @media (max-width: 600px) {
     .proposal-values { grid-template-columns: 1fr; }
     .val-arrow { display: none; }
@@ -327,6 +374,8 @@ router.get('/:auditId/review', async (req, res, next) => {
     ${fixableCount > 0 ? `<button class="btn-fix-all" onclick="fixAll(this)" data-ids="${escHtml(JSON.stringify(fixableIds))}">⚡ Publish all live (${fixableCount})</button>` : ''}
   </div>
 </div>
+
+${cmsBannerHtml}
 
 ${publishedCount > 0 ? `
 <div class="autoapplied-banner">
@@ -496,6 +545,39 @@ function _hideOtherActions(activeBtn, fixId) {
     if (b !== activeBtn) b.style.display = 'none';
   });
 }
+
+async function saveCMSConfig(evt, domain) {
+  evt.preventDefault();
+  const form = evt.target;
+  const btn = form.querySelector('.btn-cms-save');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  const body = {
+    domain,
+    projectId: form.projectId.value.trim(),
+    dataset:   form.dataset.value.trim() || 'production',
+    token:     form.token.value.trim(),
+  };
+  try {
+    const res = await fetch('/api/cmsconfig', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.success) {
+      location.reload();
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Save & connect';
+      alert('Failed: ' + (data.error?.message || 'Unknown error'));
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Save & connect';
+    alert('Network error. Try again.');
+  }
+}
 </script>
 
 </body>
@@ -542,7 +624,8 @@ router.get('/:auditId/fixes', async (req, res, next) => {
 router.post('/:auditId/fixes/generate', async (req, res, next) => {
   try {
     const { auditId } = req.params;
-    const engine = getEngine();
+    const engine = await getEngineForAudit(auditId);
+    if (!engine) return res.status(400).json(errorResponse('No CMS configured for this domain. Register it at POST /api/cmsconfig first.', 'NO_CMS_CONFIG'));
     const count = await engine.generateFixes(auditId);
     res.json(successResponse({ auditId, generated: count }, `Generated ${count} potential fix${count !== 1 ? 'es' : ''}`));
   } catch (err) {
@@ -592,7 +675,8 @@ router.post('/fixes/:fixId/fix', async (req, res, next) => {
       await prisma.autoFix.update({ where: { id: fixId }, data: { proposedValue: overrideValue } });
     }
 
-    const engine = getEngine();
+    const engine = await getEngineForAudit(fix.auditId);
+    if (!engine) return res.status(400).json(errorResponse('No CMS configured for this domain. Register it at POST /api/cmsconfig first.', 'NO_CMS_CONFIG'));
     const result = await engine.applyFix(fixId);
     res.json(successResponse(result, result.message));
   } catch (err) {
@@ -624,7 +708,8 @@ router.post('/fixes/:fixId/publish', async (req, res, next) => {
       await prisma.autoFix.update({ where: { id: fixId }, data: { proposedValue: overrideValue } });
     }
 
-    const engine = getEngine();
+    const engine = await getEngineForAudit(fix.auditId);
+    if (!engine) return res.status(400).json(errorResponse('No CMS configured for this domain. Register it at POST /api/cmsconfig first.', 'NO_CMS_CONFIG'));
     const result = await engine.publishFix(fixId);
     res.json(successResponse(result, result.message));
   } catch (err) {
@@ -699,7 +784,10 @@ router.post('/fixes/:fixId/restore', async (req, res, next) => {
 // ============================================================================
 router.post('/fixes/:fixId/apply', async (req, res, next) => {
   try {
-    const engine = getEngine();
+    const fix = await prisma.autoFix.findUnique({ where: { id: req.params.fixId } });
+    if (!fix) return res.status(404).json(errorResponse('Fix not found', 'NOT_FOUND'));
+    const engine = await getEngineForAudit(fix.auditId);
+    if (!engine) return res.status(400).json(errorResponse('No CMS configured for this domain. Register it at POST /api/cmsconfig first.', 'NO_CMS_CONFIG'));
     const result = await engine.applyFix(req.params.fixId);
     res.json(successResponse(result, result.message));
   } catch (err) {

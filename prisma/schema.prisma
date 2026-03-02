@@ -246,6 +246,7 @@ model CMSConfig {
   adapter   String   @default("sanity")
   projectId String
   dataset   String   @default("production")
+  token     String?  // Sanity API token for this site (falls back to SANITY_API_TOKEN env var)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

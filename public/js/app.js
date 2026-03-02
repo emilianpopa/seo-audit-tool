@@ -81,6 +81,18 @@ const app = {
             });
         }
 
+        // Auto-Fix review button
+        const openAutoFixBtn = document.getElementById('openAutoFixBtn');
+        if (openAutoFixBtn) {
+            openAutoFixBtn.addEventListener('click', () => {
+                if (this.currentAuditId) {
+                    window.open(`/api/autofix/${this.currentAuditId}/review`, '_blank');
+                } else {
+                    alert('No audit loaded. Please run an audit first.');
+                }
+            });
+        }
+
         // Refresh history button
         const refreshHistory = document.getElementById('refreshHistory');
         if (refreshHistory) {
@@ -88,6 +100,30 @@ const app = {
                 this.loadHistory();
             });
         }
+
+        // Docs nav button
+        const navDocsBtn = document.getElementById('navDocsBtn');
+        if (navDocsBtn) {
+            navDocsBtn.addEventListener('click', () => this.showDocsView());
+        }
+
+        // Audit nav button
+        const navAuditBtn = document.getElementById('navAuditBtn');
+        if (navAuditBtn) {
+            navAuditBtn.addEventListener('click', () => this.resetToAuditForm());
+        }
+
+        // Docs sidebar TOC links — smooth scroll within docs content
+        document.querySelectorAll('.docs-toc-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('href').slice(1);
+                const target = document.getElementById(targetId);
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                document.querySelectorAll('.docs-toc-link').forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+            });
+        });
     },
 
     /**
@@ -155,6 +191,29 @@ const app = {
     },
 
     /**
+     * Helper to set the active nav button
+     */
+    setActiveNav(activeId) {
+        ['navAuditBtn', 'navDocsBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.classList.toggle('nav-btn-active', id === activeId);
+        });
+    },
+
+    /**
+     * Show docs view
+     */
+    showDocsView() {
+        document.getElementById('auditSection').style.display = 'none';
+        document.getElementById('progressSection').style.display = 'none';
+        document.getElementById('resultsSection').style.display = 'none';
+        document.getElementById('historySection').style.display = 'none';
+        document.getElementById('docsSection').style.display = 'block';
+        this.setActiveNav('navDocsBtn');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    /**
      * Show progress view and hide audit form
      */
     showProgressView() {
@@ -162,6 +221,8 @@ const app = {
         document.getElementById('progressSection').style.display = 'block';
         document.getElementById('resultsSection').style.display = 'none';
         document.getElementById('historySection').style.display = 'none';
+        document.getElementById('docsSection').style.display = 'none';
+        this.setActiveNav('navAuditBtn');
     },
 
     /**
@@ -172,6 +233,8 @@ const app = {
         document.getElementById('progressSection').style.display = 'none';
         document.getElementById('resultsSection').style.display = 'block';
         document.getElementById('historySection').style.display = 'block';
+        document.getElementById('docsSection').style.display = 'none';
+        this.setActiveNav('navAuditBtn');
     },
 
     /**
@@ -248,6 +311,8 @@ const app = {
         document.getElementById('progressSection').style.display = 'none';
         document.getElementById('resultsSection').style.display = 'none';
         document.getElementById('historySection').style.display = 'block';
+        document.getElementById('docsSection').style.display = 'none';
+        this.setActiveNav('navAuditBtn');
 
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });

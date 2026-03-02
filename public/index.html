@@ -10,14 +10,26 @@
 <body>
     <!-- Header -->
     <header class="header">
-        <div class="container">
-            <h1 class="logo">
-                <svg class="logo-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-                </svg>
-                SEO Audit Tool
-            </h1>
-            <p class="tagline">Comprehensive website analysis across 6 core SEO categories</p>
+        <div class="container header-inner">
+            <div>
+                <h1 class="logo">
+                    <svg class="logo-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                    </svg>
+                    SEO Audit Tool
+                </h1>
+                <p class="tagline">Comprehensive website analysis across 6 core SEO categories</p>
+            </div>
+            <nav class="header-nav">
+                <button id="navAuditBtn" class="nav-btn nav-btn-active">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    Audit
+                </button>
+                <button id="navDocsBtn" class="nav-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Docs
+                </button>
+            </nav>
         </div>
     </header>
 
@@ -222,6 +234,18 @@
                 </div>
             </div>
 
+            <!-- Auto-Fix in Sanity -->
+            <div class="card" style="border: 2px solid #f59e0b; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);">
+                <h3 style="color: #92400e;">⚡ Auto-Fix Issues in Sanity CMS</h3>
+                <p style="color: #78350f;">Review AI-generated fixes for each SEO issue and publish them directly to your website — no manual edits needed.</p>
+                <button id="openAutoFixBtn" class="btn btn-primary" style="background: #d97706; border-color: #b45309; font-size: 1rem; padding: 0.75rem 1.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin-right: 8px;">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                    </svg>
+                    Open Auto-Fix Review Page
+                </button>
+            </div>
+
             <!-- New Audit Button -->
             <div class="action-buttons">
                 <button id="newAuditBtn" class="btn btn-primary">
@@ -249,6 +273,507 @@
                 </div>
             </div>
         </section>
+        <!-- Documentation Section (Hidden Initially) -->
+        <section id="docsSection" style="display: none;">
+            <div class="docs-layout">
+
+                <!-- Sidebar TOC -->
+                <aside class="docs-sidebar">
+                    <div class="docs-sidebar-inner">
+                        <p class="docs-toc-label">On this page</p>
+                        <ul class="docs-toc">
+                            <li><a href="#doc-overview" class="docs-toc-link active">Overview</a></li>
+                            <li><a href="#doc-architecture" class="docs-toc-link">Architecture</a></li>
+                            <li><a href="#doc-crawl-flow" class="docs-toc-link">Crawl Flow</a></li>
+                            <li><a href="#doc-scoring" class="docs-toc-link">Scoring Model</a></li>
+                            <li>
+                                <ul class="docs-toc-sub">
+                                    <li><a href="#doc-score-technical" class="docs-toc-link">Technical SEO</a></li>
+                                    <li><a href="#doc-score-onpage" class="docs-toc-link">On-Page SEO</a></li>
+                                    <li><a href="#doc-score-content" class="docs-toc-link">Content Quality</a></li>
+                                    <li><a href="#doc-score-performance" class="docs-toc-link">Performance</a></li>
+                                    <li><a href="#doc-score-authority" class="docs-toc-link">Authority</a></li>
+                                    <li><a href="#doc-score-local" class="docs-toc-link">Local SEO</a></li>
+                                </ul>
+                            </li>
+                            <li><a href="#doc-autofix" class="docs-toc-link">AutoFix Engine</a></li>
+                            <li><a href="#doc-reports" class="docs-toc-link">Reports</a></li>
+                            <li><a href="#doc-api" class="docs-toc-link">API Reference</a></li>
+                            <li><a href="#doc-running" class="docs-toc-link">Running Locally</a></li>
+                        </ul>
+                    </div>
+                </aside>
+
+                <!-- Main docs content -->
+                <div class="docs-content">
+
+                    <!-- Overview -->
+                    <div id="doc-overview" class="docs-section">
+                        <h2 class="docs-h2">Overview</h2>
+                        <p class="docs-lead">The SEO Audit Tool is a self-hosted, full-stack web application that crawls any website and produces a scored SEO audit across 6 categories — with AI-generated fix proposals and one-click publishing to Sanity CMS.</p>
+
+                        <div class="docs-grid-3">
+                            <div class="docs-feature-card">
+                                <div class="docs-feature-icon">🔍</div>
+                                <strong>Crawl &amp; Analyze</strong>
+                                <p>Puppeteer-powered crawl of up to 100 pages across 6 SEO dimensions</p>
+                            </div>
+                            <div class="docs-feature-card">
+                                <div class="docs-feature-icon">📊</div>
+                                <strong>Scored Reports</strong>
+                                <p>Weighted 0–100 overall score with per-category breakdown and PDF/DOCX export</p>
+                            </div>
+                            <div class="docs-feature-card">
+                                <div class="docs-feature-icon">⚡</div>
+                                <strong>AutoFix Engine</strong>
+                                <p>Claude AI generates SEO fix proposals, applied directly to Sanity CMS drafts</p>
+                            </div>
+                        </div>
+
+                        <h3 class="docs-h3">Tech Stack</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Layer</th><th>Technology</th><th>Purpose</th></tr></thead>
+                            <tbody>
+                                <tr><td>API Server</td><td>Express.js (Node 18+)</td><td>REST API, static file serving, job triggering</td></tr>
+                                <tr><td>Job Queue</td><td>BullMQ + Redis</td><td>Async audit jobs, progress tracking, retries</td></tr>
+                                <tr><td>Database</td><td>PostgreSQL via Prisma ORM</td><td>Audit results, CMS config, AutoFix proposals</td></tr>
+                                <tr><td>Crawler</td><td>Puppeteer (Chromium)</td><td>Full-browser page rendering, HTML extraction</td></tr>
+                                <tr><td>PDF/DOCX</td><td>Puppeteer + PDFKit + Docx</td><td>Professional report generation</td></tr>
+                                <tr><td>AI Proposals</td><td>Claude (Anthropic API)</td><td>Generate SEO fix content per issue</td></tr>
+                                <tr><td>CMS Integration</td><td>Sanity Content Lake API</td><td>Apply fixes as drafts without touching published docs</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Architecture -->
+                    <div id="doc-architecture" class="docs-section">
+                        <h2 class="docs-h2">Architecture</h2>
+                        <p>The tool runs as two separate Node.js processes that communicate through Redis/BullMQ:</p>
+
+                        <div class="docs-arch-diagram">
+                            <div class="arch-box arch-client">Browser / UI<br><small>public/index.html</small></div>
+                            <div class="arch-arrow">↕ REST</div>
+                            <div class="arch-box arch-api">Express API<br><small>src/app.js :3000</small></div>
+                            <div class="arch-arrow">→ enqueue</div>
+                            <div class="arch-box arch-queue">Redis Queue<br><small>BullMQ</small></div>
+                            <div class="arch-arrow">→ consume</div>
+                            <div class="arch-box arch-worker">Worker<br><small>seoAuditWorker.js</small></div>
+                        </div>
+                        <div class="docs-arch-row2">
+                            <div class="arch-box arch-db">PostgreSQL<br><small>via Prisma</small></div>
+                            <div class="arch-line">←— reads/writes —→</div>
+                            <div class="arch-box arch-worker2">Worker &amp; API</div>
+                            <div class="arch-line">←— Sanity API —→</div>
+                            <div class="arch-box arch-cms">Sanity CMS<br><small>AutoFix drafts</small></div>
+                        </div>
+
+                        <h3 class="docs-h3">Key Source Files</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>File</th><th>Role</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>src/app.js</code></td><td>Express server — mounts all route groups, serves static UI</td></tr>
+                                <tr><td><code>src/workers/seoAuditWorker.js</code></td><td>BullMQ worker — orchestrates the full 12-step audit pipeline</td></tr>
+                                <tr><td><code>src/services/analyzers/</code></td><td>6 analyzer modules (one per SEO category)</td></tr>
+                                <tr><td><code>src/services/autofix/AutoFixEngine.js</code></td><td>Claude-powered proposal generation after audit completes</td></tr>
+                                <tr><td><code>src/services/autofix/SanityCMSAdapter.js</code></td><td>Writes approved fixes as Sanity drafts via Content Lake API</td></tr>
+                                <tr><td><code>src/services/reports/</code></td><td>PDF and DOCX report generators</td></tr>
+                                <tr><td><code>prisma/schema.prisma</code></td><td>Database schema — Audit, Page, AutoFix, CMSConfig models</td></tr>
+                                <tr><td><code>public/</code></td><td>Frontend SPA — index.html, app.js, components.js, api.js</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Crawl Flow -->
+                    <div id="doc-crawl-flow" class="docs-section">
+                        <h2 class="docs-h2">Crawl Flow</h2>
+                        <p>When you submit an audit, the worker executes 12 sequential steps:</p>
+
+                        <ol class="docs-steps">
+                            <li><strong>Validate URL</strong> — normalize and verify the target URL</li>
+                            <li><strong>Crawl pages</strong> — Puppeteer BFS crawl up to <em>maxPages</em> at <em>crawlDepth</em> levels; collects HTML, load time, status codes</li>
+                            <li><strong>Extract page data</strong> — parse titles, meta descriptions, H1–H3, alt text, canonical, schema markup, word count, images, links per page</li>
+                            <li><strong>Technical SEO analysis</strong> — robots.txt, sitemap, SSL, mobile viewport, canonical coverage, structured data, redirect consistency</li>
+                            <li><strong>On-Page SEO analysis</strong> — title/meta length distribution, heading structure, URL quality, internal link density, heading hierarchy</li>
+                            <li><strong>Content Quality analysis</strong> — word count per page type, keyword cannibalization, readability, FAQ presence, E-E-A-T signals, trust signals</li>
+                            <li><strong>Performance analysis</strong> — Google PageSpeed Insights API (mobile + desktop) or load-time estimation fallback</li>
+                            <li><strong>Authority analysis</strong> — social links, trust pages (privacy/terms/about/contact), contact info, HTTPS, trust badges</li>
+                            <li><strong>Local SEO analysis</strong> — business type detection (SaaS vs local), NAP, GBP signals, location keywords, LocalBusiness schema</li>
+                            <li><strong>Aggregate scores</strong> — weighted average of 6 category scores → overall score</li>
+                            <li><strong>Persist results</strong> — save Audit + Page records to PostgreSQL via Prisma</li>
+                            <li><strong>AutoFix generation</strong> — Claude generates fix proposals for each actionable issue; stored as AutoFix records</li>
+                        </ol>
+
+                        <div class="docs-callout docs-callout-info">
+                            <strong>Progress updates:</strong> The worker emits progress events (0% → 85%) at each step. The UI polls <code>GET /api/audit/:id/status</code> every 2 seconds to display live progress.
+                        </div>
+                    </div>
+
+                    <!-- Scoring Model -->
+                    <div id="doc-scoring" class="docs-section">
+                        <h2 class="docs-h2">Scoring Model</h2>
+                        <p>The overall score (0–100) is a <strong>weighted average of 6 independent category scores</strong>. Each category runs its own analyzer, computing a weighted sum of sub-checks.</p>
+
+                        <div class="docs-formula">
+                            Overall = round( Σ (categoryScore × weight) )
+                        </div>
+
+                        <table class="docs-table">
+                            <thead><tr><th>Category</th><th>Weight</th><th>Analyzer File</th></tr></thead>
+                            <tbody>
+                                <tr><td>Technical SEO</td><td><strong>25%</strong></td><td><code>TechnicalSEOAnalyzer.js</code></td></tr>
+                                <tr><td>On-Page SEO</td><td><strong>20%</strong></td><td><code>OnPageSEOAnalyzer.js</code></td></tr>
+                                <tr><td>Content Quality</td><td><strong>20%</strong></td><td><code>ContentQualityAnalyzer.js</code></td></tr>
+                                <tr><td>Performance</td><td><strong>10%</strong></td><td><code>PerformanceAnalyzer.js</code></td></tr>
+                                <tr><td>Authority &amp; Backlinks</td><td><strong>10%</strong></td><td><code>AuthorityAnalyzer.js</code></td></tr>
+                                <tr><td>Local SEO</td><td><strong>10%</strong></td><td><code>LocalSEOAnalyzer.js</code></td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">Rating Thresholds</h3>
+                        <div class="docs-ratings">
+                            <span class="docs-pill docs-pill-green">90+ Excellent</span>
+                            <span class="docs-pill docs-pill-blue">70–89 Good</span>
+                            <span class="docs-pill docs-pill-yellow">50–69 Needs Improvement</span>
+                            <span class="docs-pill docs-pill-red">&lt;50 Poor</span>
+                        </div>
+
+                        <h3 class="docs-h3">Score Caps &amp; Constraints</h3>
+                        <div class="docs-callout docs-callout-warn">
+                            Scores are <strong>conservative by design</strong>. Missing features score 0, not a neutral baseline. This prevents inflated scores when data or external APIs are unavailable.
+                        </div>
+                        <table class="docs-table">
+                            <thead><tr><th>Situation</th><th>Effect</th></tr></thead>
+                            <tbody>
+                                <tr><td>robots.txt blocks all crawlers (<code>Disallow: /</code>)</td><td>Technical SEO hard-capped at 45</td></tr>
+                                <tr><td>No <code>GOOGLE_PAGESPEED_API_KEY</code></td><td>Performance capped at 65 (load-time fallback)</td></tr>
+                                <tr><td>Authority category</td><td>Hard-capped at 60 (no real backlink API)</td></tr>
+                                <tr><td>Mobile optimized &lt;90%</td><td>×0.8 penalty on mobile check</td></tr>
+                                <tr><td>Multimedia coverage &lt;50%</td><td>×0.7 penalty on multimedia check</td></tr>
+                                <tr><td>All scores</td><td>Clamped to [0, 100]</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Technical SEO -->
+                    <div id="doc-score-technical" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Technical SEO (25%)</h3>
+                        <p>Checks crawlability, security, and technical hygiene. SSL carries the highest individual weight.</p>
+                        <table class="docs-table">
+                            <thead><tr><th>Check</th><th>Scoring Logic</th><th>Weight</th></tr></thead>
+                            <tbody>
+                                <tr><td>SSL Certificate</td><td>Binary: 100 if HTTPS, 0 if HTTP</td><td>30</td></tr>
+                                <tr><td>Sitemap</td><td>Binary: 100 if found, 0 if missing</td><td>20</td></tr>
+                                <tr><td>Mobile Responsive</td><td>% of pages with viewport meta. If &lt;90%: ×0.8 penalty</td><td>20</td></tr>
+                                <tr><td>Robots.txt</td><td>Tiered: 100 (with sitemap ref) → 60 (exists) → 20 (missing) → 0 (blocks all)</td><td>15</td></tr>
+                                <tr><td>Structured Data</td><td>% of pages with schema markup</td><td>5</td></tr>
+                                <tr><td>Canonical Tags</td><td>% of pages with canonical</td><td>5</td></tr>
+                                <tr><td>Redirect Consistency</td><td><code>max(0, 100 − inconsistentPaths × 20)</code></td><td>5</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- On-Page SEO -->
+                    <div id="doc-score-onpage" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">On-Page SEO (20%)</h3>
+                        <p>Evaluates metadata quality and page-level optimization across all crawled pages.</p>
+                        <table class="docs-table">
+                            <thead><tr><th>Check</th><th>Scoring Logic</th><th>Weight</th></tr></thead>
+                            <tbody>
+                                <tr><td>Title Tags</td><td>% of pages with proper length (pass threshold: ≥80%)</td><td>25</td></tr>
+                                <tr><td>Meta Descriptions</td><td>% of pages with proper length (pass threshold: ≥80%)</td><td>20</td></tr>
+                                <tr><td>Heading Structure</td><td>% of pages with exactly one H1 (pass threshold: ≥90%)</td><td>20</td></tr>
+                                <tr><td>URL Structure</td><td>% of well-formed URLs (pass threshold: ≥80%)</td><td>10</td></tr>
+                                <tr><td>Image Alt Text</td><td>If no images: 100. Else: % images with alt text</td><td>10</td></tr>
+                                <tr><td>Internal Linking</td><td><code>100 − (pages with &lt;5 links in 400+ word content / total) × 100</code></td><td>10</td></tr>
+                                <tr><td>Heading Hierarchy</td><td><code>100 − (pages with H2/H3 issues / total) × 100</code></td><td>5</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Content Quality -->
+                    <div id="doc-score-content" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Content Quality (20%)</h3>
+                        <p>Evaluates depth, trust, and E-E-A-T signals. Pages with fewer than 10 words are skipped (likely 404/error pages).</p>
+                        <table class="docs-table">
+                            <thead><tr><th>Page Type</th><th>Min Words Required</th></tr></thead>
+                            <tbody>
+                                <tr><td>Blog / Article pages</td><td>600 words</td></tr>
+                                <tr><td>Service / Product pages</td><td>800 words</td></tr>
+                                <tr><td>Hub pages (depth 1)</td><td>600 words</td></tr>
+                                <tr><td>Other pages</td><td>300 words</td></tr>
+                            </tbody>
+                        </table>
+                        <table class="docs-table" style="margin-top: 1rem;">
+                            <thead><tr><th>Check</th><th>Scoring Logic</th><th>Weight</th></tr></thead>
+                            <tbody>
+                                <tr><td>Content Volume</td><td>% of pages meeting word threshold</td><td>35</td></tr>
+                                <tr><td>Keyword Cannibalization</td><td><code>100 − (keywords in 3+ titles × 15)</code></td><td>25</td></tr>
+                                <tr><td>Readability</td><td>% of pages with readable (non-jargon) titles</td><td>15</td></tr>
+                                <tr><td>E-E-A-T Signals</td><td><code>100 − (pages lacking signals / total) × 100</code></td><td>10</td></tr>
+                                <tr><td>FAQ Sections</td><td>If present: <code>min(100, % + 20)</code>. If none: 0</td><td>5</td></tr>
+                                <tr><td>Multimedia</td><td>If &lt;50% coverage: ×0.7. Else: % with images</td><td>5</td></tr>
+                                <tr><td>Trust Signals</td><td>100 if testimonials/case studies/about found, else 30</td><td>5</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Performance -->
+                    <div id="doc-score-performance" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Performance (10%)</h3>
+                        <p>Uses Google PageSpeed Insights API when available; falls back to load-time estimation.</p>
+                        <table class="docs-table">
+                            <thead><tr><th>Mode</th><th>Formula</th></tr></thead>
+                            <tbody>
+                                <tr><td>With PageSpeed API</td><td><code>round(mobileScore × 0.7 + desktopScore × 0.3)</code></td></tr>
+                                <tr><td>Fallback (no API key)</td><td>Base 45 ± load time adjustments, <strong>capped at 65</strong></td></tr>
+                            </tbody>
+                        </table>
+                        <table class="docs-table" style="margin-top: 1rem;">
+                            <thead><tr><th>Core Web Vital</th><th>Flag if…</th><th>High severity if…</th></tr></thead>
+                            <tbody>
+                                <tr><td>LCP (Largest Contentful Paint)</td><td>&gt; 2.5s</td><td>&gt; 4s</td></tr>
+                                <tr><td>CLS (Cumulative Layout Shift)</td><td>&gt; 0.1</td><td>&gt; 0.25</td></tr>
+                                <tr><td>FCP (First Contentful Paint)</td><td>&gt; 1.8s</td><td>—</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Authority -->
+                    <div id="doc-score-authority" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Authority &amp; Backlinks (10%)</h3>
+                        <p>Measures on-site trust signals. No real backlink API is integrated, so the score is <strong>hard-capped at 60</strong> to prevent inflation.</p>
+                        <table class="docs-table">
+                            <thead><tr><th>Check</th><th>Scoring Logic</th><th>Weight</th></tr></thead>
+                            <tbody>
+                                <tr><td>Security (HTTPS)</td><td>Binary: 100 / 0</td><td>30</td></tr>
+                                <tr><td>Trust Pages</td><td>Tiered: 1→20%, 2→40%, 3→65%, 4+→100% (privacy, terms, about, contact)</td><td>30</td></tr>
+                                <tr><td>Contact Info</td><td>Tiered: 1→30%, 2→65%, 3→100% (email, phone, address)</td><td>25</td></tr>
+                                <tr><td>Social Media</td><td>Tiered: 0→0%, 1→15%, 2→35%, 3→60%, 4→80%, 5+→100%</td><td>10</td></tr>
+                                <tr><td>Trust Badges</td><td>100 (homepage), 50 (other pages), 0 (none)</td><td>15</td></tr>
+                                <tr><td>Backlink Indicators</td><td>Informational only — not scored</td><td>0</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Local SEO -->
+                    <div id="doc-score-local" class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Local SEO (10%)</h3>
+                        <p>Detects business type (SaaS vs local) using keyword signals on the homepage, then applies entirely different weight tables to avoid penalizing SaaS businesses for missing NAP/GBP signals.</p>
+                        <div class="docs-two-col">
+                            <div>
+                                <p><strong>Local Business Weights</strong></p>
+                                <table class="docs-table">
+                                    <thead><tr><th>Check</th><th>Weight</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>LocalBusiness Schema</td><td>30</td></tr>
+                                        <tr><td>NAP Consistency</td><td>30</td></tr>
+                                        <tr><td>Google Business Profile</td><td>20</td></tr>
+                                        <tr><td>Location Keywords</td><td>15</td></tr>
+                                        <tr><td>Geographic Targeting</td><td>5</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div>
+                                <p><strong>SaaS / Digital Business Weights</strong></p>
+                                <table class="docs-table">
+                                    <thead><tr><th>Check</th><th>Weight</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>Digital Presence</td><td>35</td></tr>
+                                        <tr><td>Google Business / Reviews</td><td>25</td></tr>
+                                        <tr><td>LocalBusiness Schema</td><td>15</td></tr>
+                                        <tr><td>Location Keywords</td><td>10</td></tr>
+                                        <tr><td>NAP Consistency</td><td>10</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Example -->
+                    <div class="docs-section docs-section-sub">
+                        <h3 class="docs-h3">Example Score Calculation</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Category</th><th>Score</th><th>Weight</th><th>Contribution</th></tr></thead>
+                            <tbody>
+                                <tr><td>Technical SEO</td><td>75</td><td>0.25</td><td>18.75</td></tr>
+                                <tr><td>On-Page SEO</td><td>82</td><td>0.20</td><td>16.40</td></tr>
+                                <tr><td>Content Quality</td><td>68</td><td>0.20</td><td>13.60</td></tr>
+                                <tr><td>Performance</td><td>55</td><td>0.10</td><td>5.50</td></tr>
+                                <tr><td>Authority</td><td>45</td><td>0.10</td><td>4.50</td></tr>
+                                <tr><td>Local SEO</td><td>72</td><td>0.10</td><td>7.20</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="docs-formula">Overall = round(18.75 + 16.40 + 13.60 + 5.50 + 4.50 + 7.20) = round(65.95) = <strong>66</strong> → "Needs Improvement"</div>
+                    </div>
+
+                    <!-- AutoFix Engine -->
+                    <div id="doc-autofix" class="docs-section">
+                        <h2 class="docs-h2">AutoFix Engine</h2>
+                        <p>After every audit completes, the worker automatically triggers the AutoFix engine (Step 12). It reads the audit findings, queries your CMS config for the domain, and asks Claude to generate fix proposals for each actionable issue.</p>
+
+                        <h3 class="docs-h3">How It Works</h3>
+                        <ol class="docs-steps">
+                            <li><strong>Issue mapping</strong> — Each issue type is mapped to a specific Sanity field (e.g. <code>missing_title_tags</code> → <code>pageSeo.title</code> per page)</li>
+                            <li><strong>Claude generates proposals</strong> — For each issue, Claude reads the page content and writes an SEO-optimized fix</li>
+                            <li><strong>Proposals stored</strong> — Saved as <code>AutoFix</code> records in PostgreSQL with status <code>PENDING</code></li>
+                            <li><strong>Review UI</strong> — Visit <code>GET /api/autofix/:auditId/review</code> to see all proposals with approve/dismiss buttons</li>
+                            <li><strong>One-click apply</strong> — <code>POST /api/autofix/fixes/:fixId/fix</code> patches the Sanity <strong>draft</strong> document atomically</li>
+                            <li><strong>Draft safety</strong> — Published documents are never touched. The fix is written to <code>drafts.&lt;id&gt;</code> — you review and publish in Sanity Studio</li>
+                        </ol>
+
+                        <h3 class="docs-h3">Issues with Proposals</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Issue Type</th><th>Target Field</th><th>Scope</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>missing_title_tags</code></td><td><code>pageSeo.title</code></td><td>Per page</td></tr>
+                                <tr><td><code>missing_meta_descriptions</code></td><td><code>pageSeo.description</code></td><td>Per page</td></tr>
+                                <tr><td><code>missing_h1</code></td><td><code>pageSeo.h1</code></td><td>Per page</td></tr>
+                                <tr><td><code>thin_content</code></td><td><code>pageSeo.contentBrief</code></td><td>Per page</td></tr>
+                                <tr><td><code>weak_eeat_signals</code></td><td><code>pageSeo.eeatBrief</code></td><td>Per page</td></tr>
+                                <tr><td><code>no_faq_sections</code></td><td><code>seoSettings.faqNotes</code></td><td>Site-wide</td></tr>
+                                <tr><td><code>missing_canonical_tags</code></td><td><code>seoSettings.canonicalUrl</code></td><td>Site-wide</td></tr>
+                                <tr><td><code>missing_og_tags</code></td><td><code>seoSettings.ogTitle/ogDescription</code></td><td>Site-wide</td></tr>
+                                <tr><td><code>robots_blocks_all</code></td><td><code>seoSettings.robotsSettings.index</code></td><td>Site-wide</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">Multi-Site Support</h3>
+                        <p>CMS credentials are stored per-domain in the <code>CMSConfig</code> database table. Manage them via <code>GET/POST /api/cmsconfig</code>. Each domain can have its own Sanity project ID, dataset, and write token — no hardcoded credentials in code.</p>
+                    </div>
+
+                    <!-- Reports -->
+                    <div id="doc-reports" class="docs-section">
+                        <h2 class="docs-h2">Reports</h2>
+                        <p>Two report generators produce professional PDF and DOCX exports from audit data.</p>
+
+                        <table class="docs-table">
+                            <thead><tr><th>Mode</th><th>Generator</th><th>Format</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>mode=enhanced</code> (default)</td><td><code>EnhancedSEOReportGenerator.js</code></td><td>PDF via Puppeteer (HTML→PDF)</td></tr>
+                                <tr><td><code>mode=professional</code></td><td><code>ProfessionalSEOReportGenerator.js</code></td><td>PDF or DOCX</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">Enhanced Report Structure</h3>
+                        <ol class="docs-steps">
+                            <li>Cover page — domain, date, industry label, crawl scope warning if &lt;15 pages</li>
+                            <li>Table of Contents</li>
+                            <li>Score Breakdown — overall + category scores</li>
+                            <li>What IS Working — site-specific strengths from actual crawl data</li>
+                            <li>What IS NOT Working — findings grouped by category with page breaks</li>
+                            <li>Priority Action Plan — top issues ranked by estimated impact</li>
+                            <li>Other Improvements — sub-sections with page breaks</li>
+                            <li>Keyword Opportunities — identified from title/content analysis</li>
+                            <li>Quick Wins — low-effort, high-impact fixes</li>
+                        </ol>
+
+                        <h3 class="docs-h3">Industry Detection</h3>
+                        <p>The report cover page auto-detects the industry from 10 keyword lists (Health, SaaS, E-commerce, Legal, Finance, etc.) and displays it as a label — no manual configuration needed.</p>
+                    </div>
+
+                    <!-- API Reference -->
+                    <div id="doc-api" class="docs-section">
+                        <h2 class="docs-h2">API Reference</h2>
+
+                        <h3 class="docs-h3">Audit</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>/api/audit</code></td><td>POST</td><td>Start a new audit. Body: <code>{ url, maxPages, crawlDepth }</code></td></tr>
+                                <tr><td><code>/api/audit/:id/status</code></td><td>GET</td><td>Poll audit progress and status</td></tr>
+                                <tr><td><code>/api/audit/:id/results</code></td><td>GET</td><td>Get full audit results and scores</td></tr>
+                                <tr><td><code>/api/audit/:id</code></td><td>DELETE</td><td>Cancel a running audit</td></tr>
+                                <tr><td><code>/api/audit/history</code></td><td>GET</td><td>List recent audits (paginated)</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">Reports</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>/api/report/:id/generate</code></td><td>GET</td><td>Generate report. Query: <code>?mode=enhanced</code></td></tr>
+                                <tr><td><code>/api/report/:id/download</code></td><td>GET</td><td>Download report. Query: <code>?format=pdf&mode=enhanced</code></td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">AutoFix</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>/api/autofix/:auditId/review</code></td><td>GET</td><td>HTML review UI — approve/dismiss proposals</td></tr>
+                                <tr><td><code>/api/autofix/fixes/:fixId/fix</code></td><td>POST</td><td>Approve + apply fix to Sanity draft atomically</td></tr>
+                                <tr><td><code>/api/autofix/fixes/:fixId/dismiss</code></td><td>POST</td><td>Dismiss a proposal</td></tr>
+                                <tr><td><code>/api/autofix/fixes/:fixId/edit</code></td><td>POST</td><td>Edit proposal content. Body: <code>{ proposedValue }</code></td></tr>
+                                <tr><td><code>/api/autofix/fixes/:fixId/restore</code></td><td>POST</td><td>Restore a dismissed proposal</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">CMS Config</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>/api/cmsconfig</code></td><td>GET</td><td>List all CMS configs</td></tr>
+                                <tr><td><code>/api/cmsconfig</code></td><td>POST</td><td>Create or update config for a domain</td></tr>
+                                <tr><td><code>/api/cmsconfig/:domain</code></td><td>DELETE</td><td>Remove CMS config for a domain</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Running Locally -->
+                    <div id="doc-running" class="docs-section">
+                        <h2 class="docs-h2">Running Locally</h2>
+
+                        <h3 class="docs-h3">Prerequisites</h3>
+                        <ul class="docs-list">
+                            <li>Node.js 18+</li>
+                            <li>Redis (for BullMQ queue)</li>
+                            <li>PostgreSQL (for audit storage)</li>
+                            <li>Optional: <code>GOOGLE_PAGESPEED_API_KEY</code> for real performance scores</li>
+                            <li>Optional: <code>ANTHROPIC_API_KEY</code> for AutoFix proposal generation</li>
+                            <li>Optional: <code>SANITY_API_TOKEN</code> for CMS AutoFix apply</li>
+                        </ul>
+
+                        <h3 class="docs-h3">Start the Tool</h3>
+                        <pre class="docs-pre"># 1. Install dependencies
+npm install
+
+# 2. Apply database migrations
+npx prisma migrate deploy
+
+# 3. Start Redis (Windows)
+powershell -File setup-redis.ps1
+
+# 4. Start the API server
+node src/app.js
+
+# 5. Start the audit worker (separate terminal)
+node src/workers/seoAuditWorker.js</pre>
+
+                        <h3 class="docs-h3">Trigger an Audit via Script</h3>
+                        <pre class="docs-pre"># Audit a URL, crawl up to 15 pages
+node run-new-audit.mjs https://example.com 15</pre>
+
+                        <h3 class="docs-h3">Environment Variables</h3>
+                        <table class="docs-table">
+                            <thead><tr><th>Variable</th><th>Required</th><th>Description</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>DATABASE_URL</code></td><td>Yes</td><td>PostgreSQL connection string</td></tr>
+                                <tr><td><code>REDIS_URL</code></td><td>Yes</td><td>Redis connection string</td></tr>
+                                <tr><td><code>GOOGLE_PAGESPEED_API_KEY</code></td><td>No</td><td>Enables real PageSpeed scores (uncapped)</td></tr>
+                                <tr><td><code>ANTHROPIC_API_KEY</code></td><td>No</td><td>Enables Claude AutoFix proposal generation</td></tr>
+                                <tr><td><code>SANITY_API_TOKEN</code></td><td>No</td><td>Default Sanity write token (fallback if not in CMSConfig)</td></tr>
+                                <tr><td><code>PORT</code></td><td>No</td><td>API server port (default: 3000)</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="docs-h3">Deploy to Railway</h3>
+                        <pre class="docs-pre">railway up --detach --service "seo-audit-tool"</pre>
+                    </div>
+
+                </div><!-- /docs-content -->
+            </div><!-- /docs-layout -->
+        </section>
+        <!-- End Documentation Section -->
     </main>
 
     <!-- Toast Container for Notifications -->

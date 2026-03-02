@@ -207,7 +207,14 @@ class WebsiteCrawler {
     });
 
     const hasSchema = schemaScripts.length > 0;
-    const schemaTypes = schemaScripts.map(s => s['@type']).filter(Boolean);
+    const extractTypes = (s) => {
+      if (!s) return [];
+      if (Array.isArray(s)) return s.flatMap(extractTypes);
+      const items = s['@graph'] ? s['@graph'].flatMap(extractTypes) : [];
+      if (s['@type']) items.push(...(Array.isArray(s['@type']) ? s['@type'] : [s['@type']]));
+      return items;
+    };
+    const schemaTypes = schemaScripts.flatMap(extractTypes);
 
     // Open Graph tags
     const openGraphTags = {};

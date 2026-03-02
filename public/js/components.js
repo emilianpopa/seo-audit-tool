@@ -120,12 +120,19 @@ const Components = {
             ? `<span class="score-circle ${rating}" style="width: 60px; height: 60px; font-size: 1.25rem; border-width: 4px;">${audit.overallScore}</span>`
             : `<span class="stat-value">${audit.status}</span>`;
 
+        const autoFixLink = audit.status === 'COMPLETED'
+            ? `<a href="/api/autofix/${audit.id}/review" target="_blank" onclick="event.stopPropagation()" style="font-size:0.75rem; color:#d97706; font-weight:600; white-space:nowrap; text-decoration:none; padding: 4px 8px; border: 1px solid #d97706; border-radius: 4px; margin-right: 8px;">⚡ Auto-Fix</a>`
+            : '';
+
         item.innerHTML = `
             <div class="history-info">
                 <div class="history-domain">${audit.domain || audit.targetUrl}</div>
                 <div class="history-meta">${date}</div>
             </div>
-            ${statusBadge}
+            <div style="display:flex; align-items:center; gap:8px;">
+                ${autoFixLink}
+                ${statusBadge}
+            </div>
         `;
 
         // Make clickable if completed

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Worker } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import { getRedisConnection } from '../config/redis.js';
 import { QUEUE_NAMES } from '../config/queue.js';
 import prisma from '../config/database.js';
@@ -12,6 +12,7 @@ import PerformanceAnalyzer from '../services/analyzers/PerformanceAnalyzer.js';
 import AuthorityAnalyzer from '../services/analyzers/AuthorityAnalyzer.js';
 import LocalSEOAnalyzer from '../services/analyzers/LocalSEOAnalyzer.js';
 import { AutoFixEngine } from '../services/autofix/AutoFixEngine.js';
+import { getCMSConfigForDomain } from '../services/autofix/getCMSConfig.js';
 
 /**
  * Process SEO Audit Job
@@ -87,7 +88,7 @@ async function processAudit(job) {
           imageCount: page.imageCount || null,
           linkCount: page.linkCount || null,
           hasSchema: page.hasSchema || false,
-          schemaTypes: page.schemaTypes || [],
+          schemaTypes: (page.schemaTypes || []).flat(),
           openGraphTags: page.openGraphTags || null,
           twitterTags: page.twitterTags || null,
           htmlSnapshot: page.html ? page.html.slice(0, 500000) : null
@@ -292,21 +293,53 @@ async function processAudit(job) {
     }, 'Audit completed successfully');
 
     // ========================================================================
-    // STEP 12: Auto-generate Sanity CMS fix proposals (if token is configured)
+    // STEP 12: Auto-generate + auto-publish Sanity CMS fixes
+    // Generates fix proposals and immediately publishes any that are filling
+    // empty fields (currentValue is null/empty) — safe, no human review needed.
     // ========================================================================
-    if (process.env.SANITY_API_TOKEN) {
+    const completedAudit = await prisma.seoAudit.findUnique({ where: { id: auditId }, select: { domain: true } });
+    const cmsCfg = completedAudit ? await getCMSConfigForDomain(completedAudit.domain) : null;
+    if (cmsCfg) {
+      const cmsToken = cmsCfg.token || process.env.SANITY_API_TOKEN;
+      if (cmsToken) {
       try {
         const engine = new AutoFixEngine({
-          projectId: process.env.SANITY_PROJECT_ID || 'rtt3hnlz',
-          dataset:   process.env.SANITY_DATASET   || 'production',
-          token:     process.env.SANITY_API_TOKEN,
+          projectId: cmsCfg.projectId,
+          dataset:   cmsCfg.dataset,
+          token:     cmsToken,
         });
+
         const fixCount = await engine.generateFixes(auditId);
         logger.info({ auditId, fixCount }, 'AutoFix proposals generated');
+
+        // Auto-publish fixes where the field was empty — safe to apply without review
+        const pendingFixes = await prisma.autoFix.findMany({
+          where: { auditId, status: 'PENDING' },
+        });
+
+        let published = 0;
+        let skipped = 0;
+        for (const fix of pendingFixes) {
+          const isEmpty = fix.currentValue === null || fix.currentValue === '' || fix.currentValue === 'null';
+          if (isEmpty) {
+            try {
+              await engine.publishFix(fix.id);
+              published++;
+            } catch (pubErr) {
+              logger.warn({ err: pubErr, fixId: fix.id, fieldPath: fix.fieldPath }, 'Auto-publish fix failed (non-fatal)');
+            }
+          } else {
+            skipped++;
+          }
+        }
+        logger.info({ auditId, published, skipped }, 'AutoFix auto-publish complete');
       } catch (fixErr) {
         // Non-fatal — log and continue
-        logger.warn({ err: fixErr, auditId }, 'AutoFix generation failed (non-fatal)');
+        logger.warn({ err: fixErr, auditId }, 'AutoFix generation/publish failed (non-fatal)');
       }
+      } // end if (cmsToken)
+    } else {
+      logger.info({ auditId, domain: completedAudit?.domain }, '[Step 12] No CMS config for this domain — skipping autofix');
     }
 
     return {
@@ -337,19 +370,57 @@ async function processAudit(job) {
 }
 
 // ============================================================================
-// Worker Configuration
+// SCHEDULED AUDIT TRIGGER
+// Handles 'scheduled-audit' jobs: creates a new SeoAudit record and queues it.
+// Fired by the repeatable BullMQ job registered at worker startup.
+// ============================================================================
+async function processScheduledAuditTrigger(job) {
+  const { targetUrl, maxPages = 20, crawlDepth = 3 } = job.data;
+  logger.info({ targetUrl }, 'Scheduled audit trigger fired');
+
+  const url = new URL(targetUrl);
+  const domain = url.hostname.replace(/^www\./, '');
+
+  const audit = await prisma.seoAudit.create({
+    data: {
+      targetUrl,
+      domain,
+      status: 'PENDING',
+      config: { maxPages, crawlDepth },
+    },
+  });
+
+  // Queue the real audit job using the same queue
+  const queue = new Queue(QUEUE_NAMES.SEO_AUDIT, { connection: getRedisConnection() });
+  await queue.add('process-audit', { auditId: audit.id, config: { maxPages, crawlDepth } }, {
+    jobId: audit.id,
+    timeout: 600000,
+  });
+  await queue.close();
+
+  logger.info({ auditId: audit.id, targetUrl }, 'Scheduled audit queued');
+  return { auditId: audit.id };
+}
+
+// ============================================================================
+// Worker Configuration — routes jobs by name
 // ============================================================================
 
 const worker = new Worker(
   QUEUE_NAMES.SEO_AUDIT,
-  processAudit,
+  async (job) => {
+    if (job.name === 'scheduled-audit') {
+      return processScheduledAuditTrigger(job);
+    }
+    return processAudit(job);
+  },
   {
     connection: getRedisConnection(),
-    concurrency: 3, // Process up to 3 audits simultaneously
+    concurrency: 3,
     limiter: {
-      max: 10, // Max 10 jobs
-      duration: 60000 // per minute
-    }
+      max: 10,
+      duration: 60000,
+    },
   }
 );
 
@@ -409,5 +480,37 @@ logger.info({
   queue: QUEUE_NAMES.SEO_AUDIT,
   concurrency: 3
 }, 'SEO Audit Worker started');
+
+// ============================================================================
+// SCHEDULED AUDIT REGISTRATION
+// If SCHEDULED_AUDIT_URL is set, register a repeatable weekly audit.
+// Defaults to every Monday at 09:00 UTC. Override with SCHEDULED_AUDIT_CRON.
+// ============================================================================
+if (process.env.SCHEDULED_AUDIT_URL) {
+  const scheduledUrl = process.env.SCHEDULED_AUDIT_URL;
+  const cron = process.env.SCHEDULED_AUDIT_CRON || '0 9 * * 1'; // Mon 09:00 UTC
+  const maxPages = parseInt(process.env.SCHEDULED_AUDIT_MAX_PAGES || '20', 10);
+
+  const scheduleQueue = new Queue(QUEUE_NAMES.SEO_AUDIT, { connection: getRedisConnection() });
+
+  // Remove any stale repeatable jobs with a different schedule first
+  scheduleQueue.getRepeatableJobs().then(async (jobs) => {
+    for (const job of jobs.filter(j => j.name === 'scheduled-audit')) {
+      if (job.cron !== cron || job.data?.targetUrl !== scheduledUrl) {
+        await scheduleQueue.removeRepeatableByKey(job.key);
+        logger.info({ key: job.key }, 'Removed stale scheduled audit job');
+      }
+    }
+
+    await scheduleQueue.add('scheduled-audit',
+      { targetUrl: scheduledUrl, maxPages },
+      { repeat: { cron }, jobId: `scheduled-audit-${scheduledUrl}` }
+    );
+    logger.info({ targetUrl: scheduledUrl, cron, maxPages }, 'Weekly scheduled audit registered');
+    await scheduleQueue.close();
+  }).catch(err => {
+    logger.warn({ err }, 'Failed to register scheduled audit (non-fatal)');
+  });
+}
 
 export default worker;
